@@ -181,6 +181,25 @@ opaque; `prefers-reduced-motion` → static highlight and paused video (also pau
 page is hidden); `forced-colors` → system colours; performance mode caps blur at 8 px.
 Video is always `autoplay muted loop playsinline`.
 
+### Windows caption strip stays draggable
+
+On Windows DSH uses `titleBarStyle: "hidden"` and paints its draggable caption strip as
+`[data-windows-titlebar] .frame:before` — a 40 px element with
+`-webkit-app-region: drag` whose background is `var(--dsw-specific-sidebar-fill)`. That
+strip is what makes the top bar draggable and gives double-click maximize/restore.
+
+Enabling a wallpaper makes that token translucent so the image shows through, which also
+makes the caption strip transparent. On an acrylic / transparent Electron window the hit
+test then stops treating the strip as part of the window: **dragging the top bar and
+double-clicking to maximize both stop working** (observed on DSH 0.2.2-rc.1, Windows).
+
+The fix repaints **only** that pseudo-element with the theme's original opaque colour
+(`html[data-windows-titlebar] [class*="frame"]:before`), using a stable attribute + class
+substring so a hashed-class rename does not break it. Every other surface keeps its
+translucent wallpaper look, and the rule is emitted only while a wallpaper is actually
+enabled — so the zero-CSS-by-default guarantee is untouched. Regression test:
+`tests/backdrop.test.mjs`.
+
 ---
 
 ## Architecture

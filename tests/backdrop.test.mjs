@@ -254,6 +254,33 @@ test('an explicit glass + refract>0 opt-in still works end-to-end (feature not d
 });
 
 // ---------------------------------------------------------------------------
+// Windows caption strip (window drag / double-click maximize)
+// ---------------------------------------------------------------------------
+
+test('a wallpaper keeps the Windows caption strip opaque and draggable', () => {
+  // Regression: `buildBackgroundTokens()` makes --dsw-specific-sidebar-fill
+  // translucent so the wallpaper shows through. DSH paints its 40px draggable
+  // caption strip with that very token, so on Windows' acrylic window the strip
+  // became transparent and Electron stopped hit-testing it — dragging the top
+  // bar and double-clicking to maximize/restore both stopped working.
+  const bd = sample({ enabled: true, source: 'https://example.com/wall.jpg' });
+  const css = buildBackdropCss(bd, { light: '#eeeeee', dark: '#1a1a1a' });
+  assert.match(css, /html\[data-windows-titlebar\]/);
+  assert.match(css, /\[class\*="frame"\]:before/);
+  assert.match(css, /-webkit-app-region: drag/);
+  assert.match(css, /background: #eeeeee !important/);
+  assert.match(css, /background: #1a1a1a !important/);
+  assert.match(css, /html\[data-ds-dark-theme\]/);
+  // Without a real theme a safe neutral fallback is used, never `transparent`.
+  const fallback = buildBackdropCss(bd);
+  assert.match(fallback, /background: #f4f5f7 !important/);
+  assert.ok(!fallback.includes('background: transparent !important;\n  -webkit-app-region'),
+    'the caption strip is never painted transparent');
+  // The fix must NOT appear when nothing is enabled (zero-CSS guarantee).
+  assert.equal(buildBackdropCss(sample({ enabled: false, glass: false })), '');
+});
+
+// ---------------------------------------------------------------------------
 // Pointer-driven liquid glass (Apple-style interaction)
 // ---------------------------------------------------------------------------
 

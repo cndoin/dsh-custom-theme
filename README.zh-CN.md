@@ -138,3 +138,5 @@ Host 半侧（`index.js`）是空的，状态全在浏览器里。
 MIT。内置三套预设来自 tweakcn（Apache-2.0），CSS 变量值本身不构成创造性表达，此处仅作格式示例。
 
 研究证据与方法见仓库内 `docs/`。
+
+> **Windows 标题栏**：开启壁纸后，插件会用主题原始的不透明色重绘顶部 40px 的窗口拖动条，避免顶部栏拖不动、双击不能最大化/还原（DSH 在 Windows 用 `[data-windows-titlebar] .frame:before` + `-webkit-app-region: drag` 实现拖动，该伪元素的背景色取自被壁纸设为半透明的 `--dsw-specific-sidebar-fill`）。

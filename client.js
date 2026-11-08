@@ -2064,9 +2064,12 @@ const num = (value) => Number(value.toFixed(3));
  * by `buildBackgroundTokens()` so either layer shows through.
  *
  * @param backdrop - normalised backdrop.
+ * @param captionFill - opaque `{ light, dark }` colour pair for the Windows
+ *   caption strip, taken from the real theme before it is made translucent.
+ *   Optional: without it the strip falls back to a neutral dark fill.
  * @returns CSS text, or '' when the whole feature is disabled.
  */
-function buildBackdropCss(backdrop) {
+function buildBackdropCss(backdrop, captionFill) {
   // Nothing at all on a fresh profile: both features default to off. The two
   // features are independent when enabled — glass must still work even when the
   // wallpaper switch is off (the first version gated everything behind
@@ -2083,6 +2086,39 @@ function buildBackdropCss(backdrop) {
   }
 
   const lines = [];
+  if (hasMedia) {
+  // WINDOWS WINDOW-DRAG FIX. DSH paints its draggable caption strip as
+  // `[data-windows-titlebar] .frame:before` with
+  // `background: var(--dsw-specific-sidebar-fill)` and
+  // `-webkit-app-region: drag`. When a wallpaper is enabled we make that token
+  // translucent so the image shows through — which also makes the 40px caption
+  // strip transparent. On Windows' acrylic / transparent window Electron's hit
+  // test then stops treating the strip as part of the window: dragging the top
+  // bar AND double-clicking to maximize/restore both stop working (observed on
+  // DSH 0.2.2-rc.1). Repaint ONLY the caption pseudo-element with the theme's
+  // ORIGINAL opaque colour; every other surface keeps its wallpaper look.
+  const opaqueCaption = (() => {
+    const light = captionFill && typeof captionFill.light === 'string' && captionFill.light !== ''
+      ? captionFill.light : '#f4f5f7';
+    const dark = captionFill && typeof captionFill.dark === 'string' && captionFill.dark !== ''
+      ? captionFill.dark : '#1f2126';
+    // Values come from the theme token table and passed isSafeValue() upstream,
+    // so they contain no quotes, braces or semicolons.
+    return { light, dark };
+  })();
+  lines.push(`
+html[data-windows-titlebar] [class*="frame"]:before {
+  background: ${opaqueCaption.light} !important;
+  -webkit-app-region: drag !important;
+}
+html[data-ds-dark-theme][data-windows-titlebar] [class*="frame"]:before {
+  background: ${opaqueCaption.dark} !important;
+}
+html[data-windows-titlebar] [data-window-drag] {
+  -webkit-app-region: drag !important;
+}
+`.trim());
+  }
   if (hasMedia && backdrop.kind === 'image') {
     // Belt-and-braces: paint the image on the body itself as well. A data URL
     // is validated by checkBackgroundUrl() and contains no quote/backslash, so
@@ -3065,6 +3101,7 @@ const DICTIONARIES = {
       let lastCount = 0;
       let dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
       let disposed = false;
+      let captionFill = null;
 
       const emit = () => {
         if (disposed) return;
@@ -3112,7 +3149,7 @@ const DICTIONARIES = {
        */
       const applyDom = () => {
         const bd = state.backdrop;
-        const css = buildBackdropCss(bd);
+        const css = buildBackdropCss(bd, captionFill);
         const body = typeof document === 'undefined' ? null : document.body;
         if (css === '' || body === null || body === undefined
           || typeof body.appendChild !== 'function') { teardownDom(); return; }
@@ -3214,6 +3251,16 @@ const DICTIONARIES = {
           warnings = built.warnings;
         }
         // Wallpaper translucency uses the theme's concrete surface colours.
+        // Save the ORIGINAL opaque sidebar fill before it is replaced, so the
+        // Windows caption strip (which shares that token) can be repainted
+        // opaque and stay draggable — see buildBackdropCss().
+        captionFill = (() => {
+          const original = tokens['--dsw-specific-sidebar-fill'];
+          if (original && typeof original.light === 'string' && typeof original.dark === 'string') {
+            return { light: original.light, dark: original.dark };
+          }
+          return null;
+        })();
         Object.assign(tokens, buildBackgroundTokens(state.backdrop, tokens));
         if (Object.keys(tokens).length === 0) return { count: 0, warnings };
 

@@ -44,6 +44,14 @@ First public release.
   static ramps stay opaque to protect code blocks, tables and popovers.
 - **No `!important`** in the glass rules, so DSH's focus and error states survive.
 
+### Fixed after v1.0.0
+
+- **Windows caption strip**: enabling a wallpaper made `--dsw-specific-sidebar-fill`
+  translucent, which also made DSH's 40px draggable caption strip transparent. On an
+  acrylic Electron window the top bar then became undraggable and double-click
+  maximize/restore stopped working. The strip is now repainted with the theme's original
+  opaque colour, only while a wallpaper is enabled. Regression test added.
+
 ### Removed before release
 
 - The streaming "tail caret" / orb module (source, stylesheet, tests, settings, docs).

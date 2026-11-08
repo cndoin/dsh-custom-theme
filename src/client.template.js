@@ -493,6 +493,7 @@ window.__ModuleLoader__.load({
       let lastCount = 0;
       let dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
       let disposed = false;
+      let captionFill = null;
 
       const emit = () => {
         if (disposed) return;
@@ -540,7 +541,7 @@ window.__ModuleLoader__.load({
        */
       const applyDom = () => {
         const bd = state.backdrop;
-        const css = buildBackdropCss(bd);
+        const css = buildBackdropCss(bd, captionFill);
         const body = typeof document === 'undefined' ? null : document.body;
         if (css === '' || body === null || body === undefined
           || typeof body.appendChild !== 'function') { teardownDom(); return; }
@@ -642,6 +643,16 @@ window.__ModuleLoader__.load({
           warnings = built.warnings;
         }
         // Wallpaper translucency uses the theme's concrete surface colours.
+        // Save the ORIGINAL opaque sidebar fill before it is replaced, so the
+        // Windows caption strip (which shares that token) can be repainted
+        // opaque and stay draggable — see buildBackdropCss().
+        captionFill = (() => {
+          const original = tokens['--dsw-specific-sidebar-fill'];
+          if (original && typeof original.light === 'string' && typeof original.dark === 'string') {
+            return { light: original.light, dark: original.dark };
+          }
+          return null;
+        })();
         Object.assign(tokens, buildBackgroundTokens(state.backdrop, tokens));
         if (Object.keys(tokens).length === 0) return { count: 0, warnings };
 
