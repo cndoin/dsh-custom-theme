@@ -1,0 +1,75 @@
+{
+  "name": "dsh-custom-theme",
+  "version": "1.0.0",
+  "description": "Paste a tweakcn theme CSS into DeepSeek Harness and get light + dark palettes, with optional wallpaper and a liquid-glass composer",
+  "type": "module",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cndoin/dsh-custom-theme.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cndoin/dsh-custom-theme/issues"
+  },
+  "homepage": "https://github.com/cndoin/dsh-custom-theme#readme",
+  "author": "cndoin",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "README.zh-CN.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "docs/",
+    "assets/"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test tests/core.test.mjs && node --test tests/backdrop.test.mjs && node scripts/format-matrix.mjs && node scripts/adversarial-probe.mjs && node scripts/generator-parity.mjs && node scripts/import-placeholder.mjs && node scripts/audit-findings.mjs && node scripts/preset-sweep.mjs",
+    "check": "node scripts/build.mjs && node --check client.js && npm test"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "theme",
+    "tweakcn",
+    "shadcn",
+    "css-variables",
+    "custom-theme",
+    "dark-mode",
+    "light-mode",
+    "liquid-glass",
+    "glassmorphism",
+    "wallpaper",
+    "web-ui",
+    "no-build"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale"
+      ]
+    }
+  }
+}

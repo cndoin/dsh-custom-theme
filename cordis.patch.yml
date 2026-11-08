@@ -1,0 +1,9 @@
+# dsh-custom-theme bundle patch.
+#
+# A plain insert -- `id` + `name` only, no config, no `!!js` -- so the profile
+# layer stack replays it cleanly on every reload. The plugin keeps its own state
+# in the browser (localStorage); the Host half only needs to exist so the bundle
+# mounts and the Client bundle is advertised.
+- insert:
+    - id: custom-theme
+      name: 'dsh-custom-theme'
