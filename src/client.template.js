@@ -75,7 +75,15 @@ window.__ModuleLoader__.load({
     const DEFAULT_OPTIONS = Object.freeze({
       borders: 'soft',
       radius: 'fit',
-      fonts: true,
+      // OFF by default. tweakcn's --font-sans stacks are Latin-only
+      // ("Geist, sans-serif"), and overrideTokens writes them INLINE on <body>,
+      // which beats DSH's built-in stack containing "PingFang SC" /
+      // "Microsoft YaHei". Chinese then falls back to a system font and
+      // font-synthesis fakes bold for the UI's many font-weight:500 elements —
+      // the reported "字体又是厚" problem. Leaving DSH's own font stack alone
+      // (and respecting the user's font settings) is the safe default. Users
+      // who really want a theme font can still opt in explicitly.
+      fonts: false,
       statusTint: false,
       extras: true,
       ramps: true,
@@ -103,11 +111,25 @@ window.__ModuleLoader__.load({
       try {
         const parsed = JSON.parse(raw);
         if (parsed === null || typeof parsed !== 'object') return fallback;
+        const options = normalizeOptions(parsed.options);
+        // MIGRATION (font-weight / "字体变厚" fix): older builds defaulted
+        // `fonts` to true and persisted it. Re-applying that value on every
+        // startup silently replaced DSH's CJK font stack with the theme's
+        // Latin-only stack. Reset it once, record the migration, and persist so
+        // an existing user is fixed without losing the rest of their settings.
+        if (parsed.fontsMigrationV2 !== true && options.fonts === true) {
+          options.fonts = false;
+          try {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+              ...parsed, options, fontsMigrationV2: true,
+            }));
+          } catch { /* settings still work for this session */ }
+        }
         return {
           css: typeof parsed.css === 'string' ? parsed.css : '',
           name: typeof parsed.name === 'string' ? parsed.name : '',
           enabled: parsed.enabled === true,
-          options: normalizeOptions(parsed.options),
+          options,
           backdrop: normalizeBackdrop(parsed.backdrop).backdrop,
         };
       } catch {
@@ -149,7 +171,11 @@ window.__ModuleLoader__.load({
     // ---------------------------------------------------------------------
 
     const CSS = `
-.cctRoot { display: flex; flex-direction: column; gap: 18px; }
+/* Keep the settings page from synthesizing fake bold (the UI uses
+   font-weight:500/700 while DSH ships no font-synthesis declaration). This is
+   scoped to our own card only; the app-wide fix is the fonts-default-off
+   migration in loadSaved(). */
+.cctRoot { display: flex; flex-direction: column; gap: 18px; font-synthesis: none; }
 .cctCard {
   border: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
@@ -253,10 +279,24 @@ window.__ModuleLoader__.load({
 .cctCheck { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-primary); cursor: pointer; }
 .cctCheck input { accent-color: var(--dsw-alias-brand-primary); }
 .cctInlineLabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.cctSliderRow { display: grid; grid-template-columns: minmax(110px, 1fr) 2fr 48px; gap: 10px; align-items: center; }
+.cctSliderRow { display: grid; grid-template-columns: minmax(110px, 1fr) 88px 2fr 48px; gap: 10px; align-items: center; }
 .cctSliderLabel { font-size: 12px; color: var(--dsw-alias-label-primary); }
 .cctSliderValue { font-family: var(--ds-font-family-code); font-size: 11px; color: var(--dsw-alias-label-secondary); text-align: right; }
 .cctSliderRow input[type=range] { width: 100%; accent-color: var(--dsw-alias-brand-primary); }
+.cctStepSelect {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 18px;
+  padding: 3px 6px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
+  width: 100%;
+}
+.cctStepSelect:focus-visible { border-color: var(--dsw-alias-brand-primary); }
+.cctPresetRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cctPresetHint { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .cctSliderRow input[type=color] { width: 40px; height: 28px; padding: 0; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); background: transparent; }
 .cctInputSmall {
   box-sizing: border-box; width: 100%;
@@ -332,6 +372,15 @@ window.__ModuleLoader__.load({
       let card = null;
       let rect = null;
       let boundaryAttached = false;
+      // A blurred backdrop-filter surface repaints on every CSS-variable write.
+      // Capping those writes to ~30 fps (instead of one per pointermove/rAF)
+      // is the single cheapest way to stop a low-end GPU from dropping frames
+      // while the user types. `intervalMs = 0` keeps the original 60 fps path.
+      let intervalMs = 0;
+      let lastFlush = 0;
+      let timer = 0;
+      const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now() : Date.now());
 
       const mq = (q) => (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
         ? window.matchMedia(q) : null);
@@ -366,6 +415,8 @@ window.__ModuleLoader__.load({
         pending = null;
         if (frame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
         frame = 0;
+        if (timer !== 0 && typeof clearTimeout === 'function') clearTimeout(timer);
+        timer = 0;
         detachMove();
       };
 
@@ -377,20 +428,41 @@ window.__ModuleLoader__.load({
 
       const flush = () => {
         frame = 0;
+        if (timer !== 0 && typeof clearTimeout === 'function') clearTimeout(timer);
+        timer = 0;
         // B3: re-arming a frame when the pointer already left keeps an
         // unnecessary rAF alive for every drag across the window.
         const event = pending;
         pending = null;
         if (event === null || card === null) return;
         if (isStatic() || rect === null) { write(restingGlassVars()); return; }
+        lastFlush = now();
         write(pointerGlassVars(event, rect, { elasticShift: 6 }));
       };
 
       const onMove = (event) => {
         if (!enabled || card === null || !isMouse(event)) return;
         pending = { clientX: event.clientX, clientY: event.clientY };
-        if (frame === 0 && typeof requestAnimationFrame === 'function') {
-          frame = requestAnimationFrame(flush);
+        if (intervalMs <= 0) {
+          if (frame === 0 && typeof requestAnimationFrame === 'function') {
+            frame = requestAnimationFrame(flush);
+          }
+          return;
+        }
+        // Throttled path: at most one repaint per intervalMs. A trailing timer
+        // guarantees the LAST pointer position is still flushed after a burst.
+        const elapsed = now() - lastFlush;
+        if (elapsed >= intervalMs) {
+          if (frame === 0 && typeof requestAnimationFrame === 'function') {
+            frame = requestAnimationFrame(flush);
+          }
+        } else if (timer === 0 && typeof setTimeout === 'function') {
+          timer = setTimeout(() => {
+            timer = 0;
+            if (frame === 0 && typeof requestAnimationFrame === 'function') {
+              frame = requestAnimationFrame(flush);
+            }
+          }, Math.max(0, intervalMs - elapsed));
         }
       };
 
@@ -459,10 +531,16 @@ window.__ModuleLoader__.load({
       };
 
       return {
-        enable() {
+        /** @param ms - 0 = unthrottled (fine/balanced); 32 ≈ 30 fps (balanced);
+         *  0 also means "static" when the controller skips enable() entirely. */
+        enable(ms = 0) {
+          intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
           if (enabled || !canListen) return;
           enabled = true;
           attachBoundary();
+        },
+        configure(ms = 0) {
+          intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
         },
         disable() {
           if (!enabled) return;
@@ -494,6 +572,7 @@ window.__ModuleLoader__.load({
       let dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
       let disposed = false;
       let captionFill = null;
+      let captionDrag = null;
 
       const emit = () => {
         if (disposed) return;
@@ -512,6 +591,8 @@ window.__ModuleLoader__.load({
 
       /** Remove every DOM node this plugin created for the wallpaper. */
       const teardownDom = () => {
+        if (captionDrag !== null) captionDrag.remove();
+        captionDrag = null;
         if (dom.media !== null && dom.media.tagName === 'VIDEO') {
           try { dom.media.pause(); } catch { /* already gone */ }
           dom.media.removeAttribute('src');
@@ -570,6 +651,18 @@ window.__ModuleLoader__.load({
         style.textContent = css;
         document.head.appendChild(style);
         dom.style = style;
+
+        const needsCaptionDrag = bd.enabled === true && bd.source !== ''
+          && document.documentElement.hasAttribute('data-windows-titlebar');
+        if (needsCaptionDrag && captionDrag === null) {
+          captionDrag = document.createElement('div');
+          captionDrag.id = 'dsh-custom-theme-window-drag';
+          captionDrag.setAttribute('aria-hidden', 'true');
+          body.appendChild(captionDrag);
+        } else if (!needsCaptionDrag && captionDrag !== null) {
+          captionDrag.remove();
+          captionDrag = null;
+        }
 
         // Only rebuild the SVG holder when its definition actually changed;
         // removing a filter that is currently referenced makes the composer
@@ -671,8 +764,21 @@ window.__ModuleLoader__.load({
         let warnings = [];
         if (tokensDirty) warnings = reapply().warnings;
         applyDom();
-        if (state.backdrop.glass === true) pointerGlass.enable();
-        else pointerGlass.disable();
+        const bd = state.backdrop;
+        if (bd.glass !== true) {
+          // Glass off: no listeners, no per-frame work at all.
+          pointerGlass.disable();
+        } else if (isLiteGlass(bd)) {
+          // "流畅 / lite": the biggest win for low-end PCs. A static specular
+          // light needs zero pointer listeners and zero CSS-variable writes
+          // while the user types — only one shallow blur() remains.
+          pointerGlass.disable();
+        } else {
+          // "均衡 / balanced" repaints at most ~30 fps; "精细 / fine" and
+          // custom keep the original per-rAF path.
+          pointerGlass.configure(bd.glassPreset === 'fine' ? 0 : 32);
+          pointerGlass.enable(bd.glassPreset === 'fine' ? 0 : 32);
+        }
         return { count: lastCount, warnings };
       };
 
@@ -862,8 +968,18 @@ window.__ModuleLoader__.load({
         }, [controller, t]);
 
         /** One wallpaper control; merges into current settings. */
+        const GLASS_KEYS = new Set([
+          'glassOpacity', 'glassBlur', 'glassSaturate', 'glassRadius',
+          'glassHighlight', 'glassShadow', 'refract', 'refractFrequency',
+          'performance',
+        ]);
+
         const setBackdrop = useCallback((key, value) => {
-          const result = controller.update({ backdrop: { [key]: value } });
+          // Hand-editing a glass number (slider or dropdown) means the numbers
+          // no longer match a named look. Wallpaper sliders are independent.
+          const patch = { [key]: value };
+          if (GLASS_KEYS.has(key)) patch.glassPreset = 'custom';
+          const result = controller.update({ backdrop: patch });
           if (result.saveError !== null) {
             setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
           } else if (result.sourceError !== null && result.sourceError !== undefined) {
@@ -871,18 +987,55 @@ window.__ModuleLoader__.load({
           }
         }, [controller, t]);
 
+        /** Apply a whole named glass look in one controller update. */
+        const setGlassPreset = useCallback((id) => {
+          const values = GLASS_PRESETS[id];
+          const result = controller.update({
+            backdrop: values === undefined
+              ? { glassPreset: 'custom' }
+              : { ...values, glassPreset: id },
+          });
+          if (result.saveError !== null) {
+            setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
+          } else if (values !== undefined) {
+            setStatus({ kind: 'ok', text: t('bg.presetApplied') });
+          }
+        }, [controller, t]);
+
         const bd = state.backdrop;
 
-        /** A labelled range input for the backdrop settings. */
-        const slider = (key, label, min, max, step, suffix) => h('div', { key: `s-${key}`, className: 'cctSliderRow' }, [
-          h('label', { key: 'l', className: 'cctSliderLabel', htmlFor: `cct-${key}` }, label),
-          h('input', {
-            key: 'i', id: `cct-${key}`, type: 'range', min, max, step,
-            value: bd[key],
-            onChange: event => setBackdrop(key, Number(event.target.value)),
-          }),
-          h('span', { key: 'v', className: 'cctSliderValue' }, `${bd[key]}${suffix ?? ''}`),
-        ]);
+        /**
+         * A labelled range input PLUS a discrete-stop dropdown. Both are kept
+         * (the user asked for a choice instead of only dragging): picking a
+         * stop sets the exact value, dragging the slider moves the dropdown to
+         * "custom". The two controls read/write the same state, so they stay
+         * in sync automatically.
+         */
+        const slider = (key, label, min, max, step, suffix) => {
+          const stops = SLIDER_STEPS[key] ?? [];
+          const current = bd[key];
+          const selected = stops.includes(current) ? String(current) : 'custom';
+          return h('div', { key: `s-${key}`, className: 'cctSliderRow' }, [
+            h('label', { key: 'l', className: 'cctSliderLabel', htmlFor: `cct-${key}` }, label),
+            stops.length === 0 ? null : h('select', {
+              key: 'd', className: 'cctStepSelect', value: selected,
+              'aria-label': `${label} · ${t('bg.stepSelect')}`,
+              onChange: event => {
+                if (event.target.value === 'custom') return;
+                setBackdrop(key, Number(event.target.value));
+              },
+            }, [
+              ...stops.map(value => h('option', { key: String(value), value: String(value) }, `${value}${suffix ?? ''}`)),
+              h('option', { key: 'custom', value: 'custom' }, t('bg.stepCustom')),
+            ]),
+            h('input', {
+              key: 'i', id: `cct-${key}`, type: 'range', min, max, step,
+              value: current,
+              onChange: event => setBackdrop(key, Number(event.target.value)),
+            }),
+            h('span', { key: 'v', className: 'cctSliderValue' }, `${current}${suffix ?? ''}`),
+          ]);
+        };
 
         const toggle = (key, label) => h('label', { key: `c-${key}`, className: 'cctCheck' }, [
           h('input', {
@@ -1065,6 +1218,23 @@ window.__ModuleLoader__.load({
             h('div', { className: 'cctDivider', key: 'div1' }),
 
             toggle('glass', t('bg.glass')),
+            // One-click looks: the fastest way to get a usable frame rate on
+            // a low-end PC. Both the dropdown AND the sliders below remain
+            // available and stay in sync.
+            h('div', { className: 'cctPresetRow', key: 'glassPreset' }, [
+              h('label', { key: 'l', className: 'cctInlineLabel', htmlFor: 'cct-glass-preset' }, t('bg.glassPreset')),
+              h('select', {
+                key: 's', id: 'cct-glass-preset', className: 'cctSelect',
+                value: bd.glassPreset,
+                onChange: event => setGlassPreset(event.target.value),
+              }, [
+                h('option', { key: 'lite', value: 'lite' }, t('bg.glassPresetLite')),
+                h('option', { key: 'balanced', value: 'balanced' }, t('bg.glassPresetBalanced')),
+                h('option', { key: 'fine', value: 'fine' }, t('bg.glassPresetFine')),
+                h('option', { key: 'custom', value: 'custom' }, t('bg.stepCustom')),
+              ]),
+              h('span', { key: 'h', className: 'cctPresetHint' }, t('bg.glassPresetHint')),
+            ]),
             h('div', { className: 'cctHint', key: 'glassHint' }, t('bg.glassHint')),
             slider('glassOpacity', t('bg.glassOpacity'), 0, 70, 1, '%'),
             slider('glassBlur', t('bg.glassBlur'), 0, 32, 1, 'px'),
@@ -1284,6 +1454,22 @@ window.__ModuleLoader__.load({
         document.head.appendChild(tag);
         return () => tag.remove();
       }, 'custom-theme: section stylesheet');
+
+      // Windows window-drag repair. Independent of the wallpaper/glass
+      // switches: a third-party overlay covers the whole window with
+      // `-webkit-app-region:none`, which cancels DSH's draggable caption strip.
+      // Scoped to `html[data-windows-titlebar]`, so other platforms get an
+      // inert (but harmless) stylesheet.
+      ctx.effect(() => {
+        const dragCss = buildWindowDragCss();
+        if (dragCss === '') return () => {};
+        const tag = document.createElement('style');
+        tag.dataset.plugin = PLUGIN_ID;
+        tag.dataset.pluginCss = `${PLUGIN_ID}/window-drag`;
+        tag.textContent = dragCss;
+        document.head.appendChild(tag);
+        return () => tag.remove();
+      }, 'custom-theme: window drag repair');
 
       /** The theme service is a hard dependency; `inject` guarantees it here. */
       const resolveTheme = () => {

@@ -49,6 +49,14 @@ most likely cause of janky output in small text areas and has been removed.
   owned by the Electron app and refuses CLI installs — see the note below.
 - Node.js ≥ 22 for development / rebuilding `client.js`. **Running the plugin needs no
   build step**: the generated `client.js` is committed.
+- **Compatibility (verified 2026-11-11):** the installed build and the nightly feed are
+  both **DSH 0.2.2-rc.1** — the same version this plugin was written against. The apparent
+  2026-11-09 "update" was a same-version re-download that failed with
+  `MoveFileExW / Windows error 32`, replacing nothing. Every runtime contract was checked
+  inside the current `app.asar` (the `__ModuleLoader__` closure factory,
+  `ctx.theme.overrideTokens`, `ctx.locale`, `ctx.slots.inject('settings.section')`, the
+  three injected client packages, and the stable `data-*` selectors) and is unchanged —
+  **no compatibility changes are required.**
 
 ### Three commands
 
@@ -102,6 +110,19 @@ see the format first; they are not applied until you click Apply.
 
 The wallpaper and glass card is independent of the theme paste; changes are instant and do
 not require Apply. Both are **off by default** — enable them only if you want them.
+
+Every numeric parameter now has **both** a discrete-stop dropdown and its original slider
+(the two stay in sync); dragging the slider flips the dropdown to "Custom". The glass card
+also offers three one-click quality presets: **Smooth** (recommended on low-end machines:
+one shallow `blur()`, no refraction, no pointer-tracking repaints), **Balanced** (the shipped
+defaults, repaints capped at ~30 fps), and **Fine** (full effect). Pick "Smooth" if it stutters.
+
+**Fonts are off by default.** tweakcn's `--font-sans` is usually Latin-only (e.g.
+`Geist, sans-serif`); enabling takeover wrote it INLINE on `<body>` through
+`overrideTokens`, beating DSH's built-in `PingFang SC` / `Microsoft YaHei` stack and the
+user's own font choice, so CJK text fell back to a system font with synthesized bold. An
+existing saved `fonts:true` profile is migrated to `false` on load. Opt in explicitly in
+*Mapping options* only if you really want a theme font.
 
 > **Nothing shows up?** The bottom of the card has a **Run status** JSON block. It reports
 > the switch states, URL validation result, CSS length, whether the DOM layer was created,

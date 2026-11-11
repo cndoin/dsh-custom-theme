@@ -64,7 +64,72 @@ export const DEFAULT_BACKDROP = Object.freeze({
   refractFrequency: 15,       // 5..30 → baseFrequency 0.005..0.030
   performance: false,         // lite mode: no refraction, no shimmer, shallow blur
   reducedMotion: true,        // pause the video when the OS asks
+  glassPreset: 'balanced',    // 'lite' | 'balanced' | 'fine' | 'custom'
 });
+
+/**
+ * Discrete stops offered by the settings dropdown for every numeric slider.
+ *
+ * A slider is still present next to each dropdown (both are kept): picking a
+ * stop sets the exact value, dragging the slider moves the dropdown to
+ * "custom". Values are the real clamped units (px / % / plain steps), so the
+ * dropdown needs no per-language labels — only the shared "custom" entry.
+ */
+export const SLIDER_STEPS = Object.freeze({
+  blur:             Object.freeze([0, 6, 14, 26, 40]),
+  dim:              Object.freeze([0, 20, 35, 55, 70]),
+  tintStrength:     Object.freeze([0, 10, 20, 30, 40]),
+  glassOpacity:     Object.freeze([0, 8, 14, 28, 50, 70]),
+  glassBlur:        Object.freeze([0, 4, 8, 14, 22, 32]),
+  glassSaturate:    Object.freeze([100, 130, 160, 190, 220]),
+  glassRadius:      Object.freeze([0, 8, 16, 24, 32]),
+  glassHighlight:   Object.freeze([0, 20, 40, 60, 80]),
+  glassShadow:      Object.freeze([0, 15, 30, 45, 60]),
+  refract:          Object.freeze([0, 6, 12, 18, 24]),
+  refractFrequency: Object.freeze([5, 12, 18, 24, 30]),
+});
+
+/**
+ * One-click glass "looks". They exist so a user never has to hunt through
+ * eleven sliders to get a usable frame rate — the reported problem. `lite` is
+ * the recommended default on low-end machines: shallow blur, no refraction,
+ * no per-pointer repaint, and a capped backdrop-filter chain.
+ */
+export const GLASS_PRESETS = Object.freeze({
+  lite: Object.freeze({
+    performance: true, glassOpacity: 22, glassBlur: 4, glassSaturate: 120,
+    glassRadius: 14, glassHighlight: 35, glassShadow: 18,
+    refract: 0, refractFrequency: 15,
+  }),
+  balanced: Object.freeze({
+    // Exactly the shipped defaults, so a fresh profile honestly reports
+    // "balanced" rather than "custom".
+    performance: false, glassOpacity: 14, glassBlur: 10, glassSaturate: 180,
+    glassRadius: 20, glassHighlight: 55, glassShadow: 30,
+    refract: 0, refractFrequency: 15,
+  }),
+  fine: Object.freeze({
+    performance: false, glassOpacity: 10, glassBlur: 14, glassSaturate: 190,
+    glassRadius: 24, glassHighlight: 70, glassShadow: 42,
+    refract: 8, refractFrequency: 18,
+  }),
+});
+
+/**
+ * Whether the cheap glass recipe is active. Kept in one place so the CSS, the
+ * SVG refraction and the pointer tracker agree on the same switch.
+ */
+export function isLiteGlass(backdrop) {
+  return backdrop.glassPreset === 'lite';
+}
+
+/** Which named preset (if any) the current numbers correspond to. */
+export function matchGlassPreset(backdrop) {
+  for (const [id, values] of Object.entries(GLASS_PRESETS)) {
+    if (Object.entries(values).every(([key, value]) => backdrop[key] === value)) return id;
+  }
+  return 'custom';
+}
 
 const clampNumber = (value, min, max, fallback) => {
   const n = typeof value === 'number' ? value : Number(value);
@@ -143,7 +208,12 @@ export function normalizeBackdrop(raw) {
     refractFrequency: clampNumber(input.refractFrequency, 5, 30, DEFAULT_BACKDROP.refractFrequency),
     performance: typeof input.performance === 'boolean' ? input.performance : DEFAULT_BACKDROP.performance,
     reducedMotion: typeof input.reducedMotion === 'boolean' ? input.reducedMotion : DEFAULT_BACKDROP.reducedMotion,
+    glassPreset: ['lite', 'balanced', 'fine', 'custom'].includes(input.glassPreset)
+      ? input.glassPreset : DEFAULT_BACKDROP.glassPreset,
   };
+  // Keep the label honest when a stored profile has custom numbers but still
+  // carries a named preset from an older build.
+  backdrop.glassPreset = input.glassPreset === 'custom' ? 'custom' : matchGlassPreset(backdrop);
   return { backdrop, sourceError: checked.ok ? null : checked.reason };
 }
 
@@ -223,7 +293,7 @@ html[data-windows-titlebar] [class*="frame"]:before {
   background: ${opaqueCaption.light} !important;
   -webkit-app-region: drag !important;
 }
-html[data-ds-dark-theme][data-windows-titlebar] [class*="frame"]:before {
+html[data-windows-titlebar] body[data-ds-dark-theme] [class*="frame"]:before {
   background: ${opaqueCaption.dark} !important;
 }
 html[data-windows-titlebar] [data-window-drag] {
@@ -287,6 +357,44 @@ body[${BACKDROP_ATTR}="on"] { background-color: transparent !important; }
 }
 
 /**
+ * Windows window-drag repair. Independent of the wallpaper and glass switches:
+ * it must apply whenever this plugin is loaded, because the breakage comes from
+ * a third-party overlay that covers the whole window.
+ *
+ * Electron derives the draggable region as
+ *   (every `-webkit-app-region: drag` rectangle)
+ *   MINUS (every `-webkit-app-region: no-drag` rectangle)
+ * and the subtraction ignores `pointer-events`. The dsh-pet "吃白饭" mini-game
+ * mounts `#dsh-pet-baifan-root` as `position:fixed; inset:0` over the entire
+ * window with `-webkit-app-region:none !important`; that single full-window
+ * no-drag rectangle cancels DSH's 40px caption strip, so the title bar cannot be
+ * dragged and double-click-to-maximize stops working (observed on DSH
+ * 0.2.2-rc.1, Windows).
+ *
+ * `initial` restores the property to "unset", which removes the layer from that
+ * subtraction without touching its own pointer behaviour. The selector carries
+ * specificity (1,2,2) + `!important`, which outranks the overlay's (1,0,0) +
+ * `!important` while leaving dsh-pet's own code untouched (so updating the pet
+ * plugin cannot break this, and this cannot break the pet).
+ *
+ * Scoped to `html[data-windows-titlebar]`, so macOS/Linux output is empty.
+ *
+ * @returns CSS text, or '' when this is not a Windows titlebar host.
+ */
+export function buildWindowDragCss() {
+  return `
+html[data-windows-titlebar] body #dsh-pet-baifan-root,
+html[data-windows-titlebar] body [id^="dsh-pet-baifan"] {
+  -webkit-app-region: initial !important;
+}
+html[data-windows-titlebar] body #dsh-pet-baifan-root *,
+html[data-windows-titlebar] body [id^="dsh-pet-baifan"] * {
+  -webkit-app-region: initial !important;
+}
+`.trim();
+}
+
+/**
  * Liquid glass on DSH's composer frame (`[data-composer-card]`, a stable
  * attribute — CSS-module class names are hashed and must not be targeted).
  *
@@ -309,11 +417,22 @@ body[${BACKDROP_ATTR}="on"] { background-color: transparent !important; }
  */
 export function buildGlassCss(backdrop) {
   const alpha = num(backdrop.glassOpacity / 100);
+  const lite = isLiteGlass(backdrop);
+  // The single biggest cost is the backdrop-filter chain. The lite preset uses
+  // ONE blur() only; chaining saturate/brightness/contrast forces three extra
+  // full-surface passes and is the main reason low-end PCs drop frames.
   const blur = backdrop.performance ? Math.min(backdrop.glassBlur, 8) : backdrop.glassBlur;
   const sat = num(backdrop.glassSaturate / 100);
   const hi = num(backdrop.glassHighlight / 100);
   const sh = num(backdrop.glassShadow / 100);
   const radius = backdrop.glassRadius;
+  const filter = lite
+    ? `blur(${blur}px)`
+    : `blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)})`;
+  const transition = lite
+    ? 'transition: none;'
+    : `transition: --glass-glow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                 box-shadow 0.2s ease-out;`;
 
   return `
 /* ---- Pointer state. Only the INTENSITY is interpolated; position variables
@@ -358,8 +477,8 @@ export function buildGlassCss(backdrop) {
        background-color AFTER the shorthand (which resets it). */
     background-color: color-mix(in srgb, var(--dsw-specific-input-major, #202024) ${Math.round(alpha * 100)}%, transparent);
     background-repeat: no-repeat;
-    -webkit-backdrop-filter: blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)});
-    backdrop-filter: blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)});
+    -webkit-backdrop-filter: ${filter};
+    backdrop-filter: ${filter};
     border-radius: ${radius}px;
     border: 1px solid rgba(255,255,255,${num(hi * 0.6)});
     box-shadow:
@@ -367,8 +486,7 @@ export function buildGlassCss(backdrop) {
       inset 0 1px 0 rgba(255,255,255,${num(Math.max(0.1, hi * 0.35))}),
       inset  2px  2px 1px -1px rgba(255,255,255,${num(hi * 0.6)}),
       inset -2px -2px 1px -1px rgba(255,255,255,${num(hi * 0.35)});
-    transition: --glass-glow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                box-shadow 0.2s ease-out;
+    ${transition}
   }
   /* Hover only brightens the light — no size change, no layout shift. */
   body[${GLASS_ATTR}="on"] [data-composer-card]:hover { --glass-glow: 1; }

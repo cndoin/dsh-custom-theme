@@ -1523,7 +1523,7 @@ export function buildOverrides(parsedInput, options = {}) {
   const settings = {
     borders: options.borders ?? 'soft',
     radius: options.radius ?? 'fit',
-    fonts: options.fonts ?? true,
+    fonts: options.fonts ?? false,
     statusTint: options.statusTint ?? false,
     extras: options.extras ?? true,
     ramps: options.ramps ?? true,

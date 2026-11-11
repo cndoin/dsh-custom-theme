@@ -3,6 +3,58 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.1] - 2026-11-11
+
+Compatibility check against the installed DSH **0.2.2-rc.1** (the same build the
+plugin was written against; the apparent 2026-11-09 "update" was a same-version
+re-download that failed with Windows error 32). Every runtime contract the plugin
+uses — the `__ModuleLoader__` closure factory, `ctx.theme.overrideTokens`,
+`ctx.locale`, `ctx.slots.inject('settings.section')`, the three injected client
+packages and the stable `data-*` selectors — is unchanged. **No compatibility
+changes were needed.**
+
+### Fixed
+
+- **Fonts no longer look bold / unusable (CJK).** `buildOverrides()` and the
+  settings page both defaulted `fonts` to `true`, which wrote tweakcn's
+  Latin-only `--font-sans` (e.g. `Geist, sans-serif`) INLINE on `<body>` through
+  `overrideTokens`. That beat DSH's built-in stack containing `PingFang SC` /
+  `Microsoft YaHei` and ignored the user's own font settings; Chinese fell back
+  to a system font and `font-synthesis` faked bold for the UI's many
+  `font-weight:500` elements. Font takeover is now **off by default**, an
+  existing saved `fonts:true` profile is migrated to `false` on load, and the
+  settings page adds `font-synthesis: none` to its own cards. Explicit opt-in
+  still works.
+
+### Added
+
+- **Dropdown choice next to every slider, with both controls kept.** Eleven
+  numeric parameters now have discrete stops in a `<select>`; picking one sets
+  the exact value and dragging the slider moves the dropdown to "Custom". The
+  two controls read/write the same state.
+- **One-click glass quality presets** — `Smooth` (recommended for low-end PCs),
+  `Balanced` (the shipped defaults) and `Fine` — plus an honest `Custom` label
+  whenever the numbers are hand-edited.
+
+### Changed (performance: the reported frame drops)
+
+- `Smooth` uses a **single `blur()`** instead of a four-pass
+  `blur · saturate · brightness · contrast` chain, no refraction SVG, no hover
+  transition and **no pointer-tracking listeners at all** (a static specular
+  light). `Balanced` caps pointer repaints at ~30 fps with a trailing flush so
+  the last cursor position is never lost; `Fine` keeps the original path.
+- `glassPreset` is a persisted, validated field; stored custom numbers are
+  never mislabelled as a named look.
+
+### Tests
+
+- 105 unit tests (73 core + 32 backdrop) plus all six compatibility / generator
+  / adversarial / preset-sweep scripts. New regressions cover the font default,
+  dropdown stop ranges, preset round-trips, the cheap `Smooth` CSS and the
+  custom-label migration.
+
+---
+
 ## [1.0.0] - 2026-11-08
 
 First public release.
@@ -43,14 +95,6 @@ First public release.
 - **Only two shell tokens** may become translucent; layer-1/2, overlay, input-major and
   static ramps stay opaque to protect code blocks, tables and popovers.
 - **No `!important`** in the glass rules, so DSH's focus and error states survive.
-
-### Fixed after v1.0.0
-
-- **Windows caption strip**: enabling a wallpaper made `--dsw-specific-sidebar-fill`
-  translucent, which also made DSH's 40px draggable caption strip transparent. On an
-  acrylic Electron window the top bar then became undraggable and double-click
-  maximize/restore stopped working. The strip is now repainted with the theme's original
-  opaque colour, only while a wallpaper is enabled. Regression test added.
 
 ### Removed before release
 

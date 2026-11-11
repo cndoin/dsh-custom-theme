@@ -13,9 +13,10 @@ import { dirname, join } from 'node:path';
 
 import {
   DEFAULT_BACKDROP, MAX_DATA_URL_BYTES, BACKDROP_ATTR, GLASS_ATTR,
+  SLIDER_STEPS, GLASS_PRESETS, isLiteGlass, matchGlassPreset,
   checkBackgroundUrl, normalizeBackdrop, buildBackdropCss, buildGlassCss,
   buildRefractionSvg, buildBackgroundTokens, describeMedia, shouldPauseVideo,
-  pointerGlassVars, restingGlassVars,
+  pointerGlassVars, restingGlassVars, buildWindowDragCss,
 } from '../src/backdrop.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -270,7 +271,11 @@ test('a wallpaper keeps the Windows caption strip opaque and draggable', () => {
   assert.match(css, /-webkit-app-region: drag/);
   assert.match(css, /background: #eeeeee !important/);
   assert.match(css, /background: #1a1a1a !important/);
-  assert.match(css, /html\[data-ds-dark-theme\]/);
+  assert.match(css, /body\[data-ds-dark-theme\]/);
+  // The pet-overlay neutralisation lives in its own stylesheet now (see below),
+  // so the backdrop CSS must not carry it.
+  assert.ok(!css.includes('dsh-pet-baifan-root'),
+    'the overlay repair is independent of the wallpaper switch');
   // Without a real theme a safe neutral fallback is used, never `transparent`.
   const fallback = buildBackdropCss(bd);
   assert.match(fallback, /background: #f4f5f7 !important/);
@@ -278,6 +283,47 @@ test('a wallpaper keeps the Windows caption strip opaque and draggable', () => {
     'the caption strip is never painted transparent');
   // The fix must NOT appear when nothing is enabled (zero-CSS guarantee).
   assert.equal(buildBackdropCss(sample({ enabled: false, glass: false })), '');
+});
+
+test('the Windows window-drag repair neutralises the full-window pet overlay', () => {
+  // Root cause: Electron subtracts every `no-drag` rectangle from the draggable
+  // region, ignoring `pointer-events`. dsh-pet's "吃白饭" mini-game mounts
+  // `#dsh-pet-baifan-root` as `position:fixed; inset:0` with
+  // `-webkit-app-region:none !important`, which cancels DSH's 40px caption
+  // strip — the title bar cannot be dragged and double-click maximize dies.
+  const css = buildWindowDragCss();
+  // Scoped to the Windows titlebar host so macOS/Linux stay untouched.
+  assert.match(css, /html\[data-windows-titlebar\]/);
+  // The overlay root itself is neutralised...
+  assert.match(css, /#dsh-pet-baifan-root/);
+  assert.match(css, /-webkit-app-region: initial !important/);
+  // ...and a prefix-attribute fallback survives a rename of the overlay id.
+  assert.match(css, /\[id\^="dsh-pet-baifan"\]/);
+  // ...and so is everything it contains.
+  assert.match(css, /\[id\^="dsh-pet-baifan"\] \*\s*\{\s*-webkit-app-region: initial !important;/);
+  // `initial` (not `none`) is what removes the layer from the subtraction;
+  // `none` would keep subtracting and make the bug permanent.
+  assert.ok(!/#dsh-pet-baifan-root[^}]*app-region:\s*none/.test(css),
+    'never re-declare no-drag on the overlay');
+  // Specificity must beat the overlay's `(1,0,0) + !important`.
+  const overlaySpecificity = (sel) => {
+    const ids = (sel.match(/#/g) || []).length;
+    const classes = (sel.match(/[.[:][\w-]|\]/g) || []).length;
+    const elems = (sel.match(/(^|[\s>+~])[a-z]/gi) || []).length;
+    return [ids, classes, elems];
+  };
+  for (const sel of css.matchAll(/(^|\n)([^\n{]+)\{/g)) {
+    const s = sel[2].trim();
+    if (s.includes('dsh-pet-baifan-root')) {
+      const ours = overlaySpecificity(s);
+      const theirs = [1, 0, 0];
+      assert.ok(ours[0] >= theirs[0] && ours[1] >= theirs[1],
+        `selector "${s}" must outrank the overlay id selector`);
+    }
+  }
+  // It must not leak into the backdrop/glass CSS (independent switches).
+  const bd = sample({ enabled: false, glass: false });
+  assert.equal(buildBackdropCss(bd), '', 'drag repair is a separate stylesheet');
 });
 
 // ---------------------------------------------------------------------------
@@ -451,10 +497,14 @@ test('the settings page exposes the wallpaper controls', async () => {
   for (const key of [
     'bg.title', 'bg.enable', 'bg.kindImage', 'bg.kindVideo', 'bg.blur',
     'bg.glass', 'bg.glassOpacity', 'bg.refract', 'bg.performance',
+    'bg.stepCustom', 'bg.glassPreset', 'bg.glassPresetLite', 'bg.presetApplied',
   ]) {
     assert.match(source, new RegExp(`'${key.replace('.', '\\.')}'\\s*:`), `missing locale key ${key}`);
   }
   assert.match(source, /cctSliderRow/);
+  assert.match(source, /cctStepSelect/, 'the dropdown beside each slider exists');
+  assert.match(source, /cct-glass-preset/, 'the one-click glass quality dropdown exists');
+  assert.match(source, /function matchGlassPreset/);
   assert.match(source, /data-dsh-backdrop/);
 });
 
@@ -492,6 +542,7 @@ test('enabling a wallpaper creates the DOM layer, stylesheet and token overrides
   const body = makeElement('body');
   const document = {
     createElement: makeElement,
+    documentElement: { hasAttribute: (name) => name === 'data-windows-titlebar' },
     head: { appendChild: (node) => appendedHead.push(node) },
     get body() { return body; },
   };
@@ -600,4 +651,82 @@ test('enabling a wallpaper creates the DOM layer, stylesheet and token overrides
   // Changing only a slider must not recreate the media element.
   const before = created.filter((el) => el.tagName === 'IMG').length;
   assert.equal(before, 1);
+});
+
+// ---------------------------------------------------------------------------
+// Discrete dropdown stops + glass quality presets (the "keep drag AND choice"
+// and frame-drop fixes)
+// ---------------------------------------------------------------------------
+
+test('every numeric slider has discrete dropdown stops inside its own range', () => {
+  const ranges = {
+    blur: [0, 40], dim: [0, 70], tintStrength: [0, 40],
+    glassOpacity: [0, 70], glassBlur: [0, 32], glassSaturate: [100, 220],
+    glassRadius: [0, 32], glassHighlight: [0, 80], glassShadow: [0, 60],
+    refract: [0, 24], refractFrequency: [5, 30],
+  };
+  for (const [key, [min, max]] of Object.entries(ranges)) {
+    const stops = SLIDER_STEPS[key];
+    assert.ok(Array.isArray(stops) && stops.length >= 3, `${key} needs dropdown stops`);
+    for (const value of stops) {
+      assert.ok(Number.isFinite(value) && value >= min && value <= max,
+        `${key} stop ${value} must be inside ${min}..${max}`);
+    }
+    assert.ok(new Set(stops).size === stops.length, `${key} stops must be unique`);
+  }
+});
+
+test('glass presets are valid, distinct and lite is the cheapest recipe', () => {
+  assert.deepEqual(Object.keys(GLASS_PRESETS).sort(), ['balanced', 'fine', 'lite']);
+  for (const [id, values] of Object.entries(GLASS_PRESETS)) {
+    const bd = normalizeBackdrop({ glass: true, ...values, glassPreset: id }).backdrop;
+    assert.equal(bd.glassPreset, id, `${id} round-trips through normalizeBackdrop`);
+    assert.equal(matchGlassPreset(bd), id, `${id} is recognised by matchGlassPreset`);
+    assert.equal(isLiteGlass(bd), id === 'lite', `lite flag for ${id}`);
+    // The SVG is a decoration-only definition; it must NEVER be referenced by
+    // the composer CSS (that would re-anchor its position:fixed popovers).
+    assert.ok(!buildGlassCss(bd).includes('filter: url('),
+      `${id} never filters the composer element`);
+    if (id === 'lite') assert.equal(buildRefractionSvg(bd), '',
+      'lite avoids even the unused SVG definition');
+  }
+  assert.ok(GLASS_PRESETS.lite.glassBlur < GLASS_PRESETS.fine.glassBlur,
+    'lite uses a shallower blur than fine');
+  assert.equal(GLASS_PRESETS.lite.refract, 0, 'lite never pays for an SVG refraction filter');
+});
+
+test('the default profile is balanced, and a lite profile emits no transition', () => {
+  const fresh = normalizeBackdrop(null).backdrop;
+  assert.equal(fresh.glassPreset, 'balanced');
+  assert.equal(isLiteGlass(fresh), false);
+  const balancedCss = buildGlassCss({ ...fresh, glass: true });
+  assert.match(balancedCss, /transition: --glass-glow/,
+    'balanced keeps the original animated highlight');
+
+  const lite = normalizeBackdrop({
+    glass: true, ...GLASS_PRESETS.lite, glassPreset: 'lite',
+  }).backdrop;
+  const liteCss = buildGlassCss(lite);
+  assert.match(liteCss, /backdrop-filter: blur\(4px\);/,
+    'lite uses a single shallow blur, no saturate/brightness/contrast chain');
+  assert.ok(!/saturate\(/.test(liteCss), 'lite drops the extra filter passes');
+  assert.match(liteCss, /transition: none/, 'lite removes the per-hover transition');
+  assert.equal(buildRefractionSvg(lite), '', 'lite emits no refraction SVG');
+});
+
+test('hand-editing a glass number moves the dropdown label to custom', () => {
+  const bd = normalizeBackdrop({
+    glass: true, ...GLASS_PRESETS.balanced, glassPreset: 'balanced',
+  }).backdrop;
+  assert.equal(bd.glassPreset, 'balanced');
+  const custom = normalizeBackdrop({ ...bd, glassBlur: 17 }).backdrop;
+  assert.equal(matchGlassPreset(custom), 'custom');
+  assert.equal(normalizeBackdrop({ ...custom }).backdrop.glassPreset, 'custom');
+});
+
+test('a stored profile with custom numbers is honestly labelled custom', () => {
+  // Old builds had no glassPreset field; a saved custom value must not be
+  // mislabelled as a named look after an upgrade.
+  const bd = normalizeBackdrop({ glass: true, glassBlur: 21 }).backdrop;
+  assert.equal(bd.glassPreset, 'custom');
 });

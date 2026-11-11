@@ -1553,7 +1553,7 @@ function buildOverrides(parsedInput, options = {}) {
   const settings = {
     borders: options.borders ?? 'soft',
     radius: options.radius ?? 'fit',
-    fonts: options.fonts ?? true,
+    fonts: options.fonts ?? false,
     statusTint: options.statusTint ?? false,
     extras: options.extras ?? true,
     ramps: options.ramps ?? true,
@@ -1952,7 +1952,72 @@ const DEFAULT_BACKDROP = Object.freeze({
   refractFrequency: 15,       // 5..30 → baseFrequency 0.005..0.030
   performance: false,         // lite mode: no refraction, no shimmer, shallow blur
   reducedMotion: true,        // pause the video when the OS asks
+  glassPreset: 'balanced',    // 'lite' | 'balanced' | 'fine' | 'custom'
 });
+
+/**
+ * Discrete stops offered by the settings dropdown for every numeric slider.
+ *
+ * A slider is still present next to each dropdown (both are kept): picking a
+ * stop sets the exact value, dragging the slider moves the dropdown to
+ * "custom". Values are the real clamped units (px / % / plain steps), so the
+ * dropdown needs no per-language labels — only the shared "custom" entry.
+ */
+const SLIDER_STEPS = Object.freeze({
+  blur:             Object.freeze([0, 6, 14, 26, 40]),
+  dim:              Object.freeze([0, 20, 35, 55, 70]),
+  tintStrength:     Object.freeze([0, 10, 20, 30, 40]),
+  glassOpacity:     Object.freeze([0, 8, 14, 28, 50, 70]),
+  glassBlur:        Object.freeze([0, 4, 8, 14, 22, 32]),
+  glassSaturate:    Object.freeze([100, 130, 160, 190, 220]),
+  glassRadius:      Object.freeze([0, 8, 16, 24, 32]),
+  glassHighlight:   Object.freeze([0, 20, 40, 60, 80]),
+  glassShadow:      Object.freeze([0, 15, 30, 45, 60]),
+  refract:          Object.freeze([0, 6, 12, 18, 24]),
+  refractFrequency: Object.freeze([5, 12, 18, 24, 30]),
+});
+
+/**
+ * One-click glass "looks". They exist so a user never has to hunt through
+ * eleven sliders to get a usable frame rate — the reported problem. `lite` is
+ * the recommended default on low-end machines: shallow blur, no refraction,
+ * no per-pointer repaint, and a capped backdrop-filter chain.
+ */
+const GLASS_PRESETS = Object.freeze({
+  lite: Object.freeze({
+    performance: true, glassOpacity: 22, glassBlur: 4, glassSaturate: 120,
+    glassRadius: 14, glassHighlight: 35, glassShadow: 18,
+    refract: 0, refractFrequency: 15,
+  }),
+  balanced: Object.freeze({
+    // Exactly the shipped defaults, so a fresh profile honestly reports
+    // "balanced" rather than "custom".
+    performance: false, glassOpacity: 14, glassBlur: 10, glassSaturate: 180,
+    glassRadius: 20, glassHighlight: 55, glassShadow: 30,
+    refract: 0, refractFrequency: 15,
+  }),
+  fine: Object.freeze({
+    performance: false, glassOpacity: 10, glassBlur: 14, glassSaturate: 190,
+    glassRadius: 24, glassHighlight: 70, glassShadow: 42,
+    refract: 8, refractFrequency: 18,
+  }),
+});
+
+/**
+ * Whether the cheap glass recipe is active. Kept in one place so the CSS, the
+ * SVG refraction and the pointer tracker agree on the same switch.
+ */
+function isLiteGlass(backdrop) {
+  return backdrop.glassPreset === 'lite';
+}
+
+/** Which named preset (if any) the current numbers correspond to. */
+function matchGlassPreset(backdrop) {
+  for (const [id, values] of Object.entries(GLASS_PRESETS)) {
+    if (Object.entries(values).every(([key, value]) => backdrop[key] === value)) return id;
+  }
+  return 'custom';
+}
 
 const clampNumber = (value, min, max, fallback) => {
   const n = typeof value === 'number' ? value : Number(value);
@@ -2031,7 +2096,12 @@ function normalizeBackdrop(raw) {
     refractFrequency: clampNumber(input.refractFrequency, 5, 30, DEFAULT_BACKDROP.refractFrequency),
     performance: typeof input.performance === 'boolean' ? input.performance : DEFAULT_BACKDROP.performance,
     reducedMotion: typeof input.reducedMotion === 'boolean' ? input.reducedMotion : DEFAULT_BACKDROP.reducedMotion,
+    glassPreset: ['lite', 'balanced', 'fine', 'custom'].includes(input.glassPreset)
+      ? input.glassPreset : DEFAULT_BACKDROP.glassPreset,
   };
+  // Keep the label honest when a stored profile has custom numbers but still
+  // carries a named preset from an older build.
+  backdrop.glassPreset = input.glassPreset === 'custom' ? 'custom' : matchGlassPreset(backdrop);
   return { backdrop, sourceError: checked.ok ? null : checked.reason };
 }
 
@@ -2111,7 +2181,7 @@ html[data-windows-titlebar] [class*="frame"]:before {
   background: ${opaqueCaption.light} !important;
   -webkit-app-region: drag !important;
 }
-html[data-ds-dark-theme][data-windows-titlebar] [class*="frame"]:before {
+html[data-windows-titlebar] body[data-ds-dark-theme] [class*="frame"]:before {
   background: ${opaqueCaption.dark} !important;
 }
 html[data-windows-titlebar] [data-window-drag] {
@@ -2175,6 +2245,44 @@ body[${BACKDROP_ATTR}="on"] { background-color: transparent !important; }
 }
 
 /**
+ * Windows window-drag repair. Independent of the wallpaper and glass switches:
+ * it must apply whenever this plugin is loaded, because the breakage comes from
+ * a third-party overlay that covers the whole window.
+ *
+ * Electron derives the draggable region as
+ *   (every `-webkit-app-region: drag` rectangle)
+ *   MINUS (every `-webkit-app-region: no-drag` rectangle)
+ * and the subtraction ignores `pointer-events`. The dsh-pet "吃白饭" mini-game
+ * mounts `#dsh-pet-baifan-root` as `position:fixed; inset:0` over the entire
+ * window with `-webkit-app-region:none !important`; that single full-window
+ * no-drag rectangle cancels DSH's 40px caption strip, so the title bar cannot be
+ * dragged and double-click-to-maximize stops working (observed on DSH
+ * 0.2.2-rc.1, Windows).
+ *
+ * `initial` restores the property to "unset", which removes the layer from that
+ * subtraction without touching its own pointer behaviour. The selector carries
+ * specificity (1,2,2) + `!important`, which outranks the overlay's (1,0,0) +
+ * `!important` while leaving dsh-pet's own code untouched (so updating the pet
+ * plugin cannot break this, and this cannot break the pet).
+ *
+ * Scoped to `html[data-windows-titlebar]`, so macOS/Linux output is empty.
+ *
+ * @returns CSS text, or '' when this is not a Windows titlebar host.
+ */
+function buildWindowDragCss() {
+  return `
+html[data-windows-titlebar] body #dsh-pet-baifan-root,
+html[data-windows-titlebar] body [id^="dsh-pet-baifan"] {
+  -webkit-app-region: initial !important;
+}
+html[data-windows-titlebar] body #dsh-pet-baifan-root *,
+html[data-windows-titlebar] body [id^="dsh-pet-baifan"] * {
+  -webkit-app-region: initial !important;
+}
+`.trim();
+}
+
+/**
  * Liquid glass on DSH's composer frame (`[data-composer-card]`, a stable
  * attribute — CSS-module class names are hashed and must not be targeted).
  *
@@ -2197,11 +2305,22 @@ body[${BACKDROP_ATTR}="on"] { background-color: transparent !important; }
  */
 function buildGlassCss(backdrop) {
   const alpha = num(backdrop.glassOpacity / 100);
+  const lite = isLiteGlass(backdrop);
+  // The single biggest cost is the backdrop-filter chain. The lite preset uses
+  // ONE blur() only; chaining saturate/brightness/contrast forces three extra
+  // full-surface passes and is the main reason low-end PCs drop frames.
   const blur = backdrop.performance ? Math.min(backdrop.glassBlur, 8) : backdrop.glassBlur;
   const sat = num(backdrop.glassSaturate / 100);
   const hi = num(backdrop.glassHighlight / 100);
   const sh = num(backdrop.glassShadow / 100);
   const radius = backdrop.glassRadius;
+  const filter = lite
+    ? `blur(${blur}px)`
+    : `blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)})`;
+  const transition = lite
+    ? 'transition: none;'
+    : `transition: --glass-glow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+                 box-shadow 0.2s ease-out;`;
 
   return `
 /* ---- Pointer state. Only the INTENSITY is interpolated; position variables
@@ -2246,8 +2365,8 @@ function buildGlassCss(backdrop) {
        background-color AFTER the shorthand (which resets it). */
     background-color: color-mix(in srgb, var(--dsw-specific-input-major, #202024) ${Math.round(alpha * 100)}%, transparent);
     background-repeat: no-repeat;
-    -webkit-backdrop-filter: blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)});
-    backdrop-filter: blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)});
+    -webkit-backdrop-filter: ${filter};
+    backdrop-filter: ${filter};
     border-radius: ${radius}px;
     border: 1px solid rgba(255,255,255,${num(hi * 0.6)});
     box-shadow:
@@ -2255,8 +2374,7 @@ function buildGlassCss(backdrop) {
       inset 0 1px 0 rgba(255,255,255,${num(Math.max(0.1, hi * 0.35))}),
       inset  2px  2px 1px -1px rgba(255,255,255,${num(hi * 0.6)}),
       inset -2px -2px 1px -1px rgba(255,255,255,${num(hi * 0.35)});
-    transition: --glass-glow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                box-shadow 0.2s ease-out;
+    ${transition}
   }
   /* Hover only brightens the light — no size change, no layout shift. */
   body[${GLASS_ATTR}="on"] [data-composer-card]:hover { --glass-glow: 1; }
@@ -2526,7 +2644,7 @@ const DICTIONARIES = {
     'mapping.title': '映射选项',
     'mapping.hint': '主题里的颜色会映射到 Harness 的界面令牌。这些开关控制额外接管哪些部分。',
     'mapping.borders': '接管边框颜色',
-    'mapping.fonts': '接管字体（正文字体 + 代码字体）',
+    'mapping.fonts': '接管字体（可能让中文变粗，默认关闭；建议保持关闭）',
     'mapping.radius': '按主题圆角换算圆角档位',
     'mapping.extras': '接管代码块、滚动条、悬停等细节',
     'mapping.statusTint': '用主题配色给成功 / 警告状态上色',
@@ -2550,7 +2668,15 @@ const DICTIONARIES = {
     'bg.tintClear': '清除着色',
     'bg.tintStrength': '着色强度',
     'bg.glass': '输入框液态玻璃',
-    'bg.glassHint': '作用于对话输入框（不是从 tweakcn 粘贴的主题）。配方参考 kevinbism/liquid-glass-effect、Z1Code/glass-refraction、shuding/liquid-glass。',
+    'bg.glassHint': '作用于对话输入框（不是从 tweakcn 粘贴的主题）。每个参数既可用下拉选档，也可拖滑块，两者联动。配方参考 kevinbism/liquid-glass-effect、Z1Code/glass-refraction、shuding/liquid-glass。',
+    'bg.stepSelect': '选择档位',
+    'bg.stepCustom': '自定义',
+    'bg.glassPreset': '玻璃档位',
+    'bg.glassPresetLite': '流畅（推荐 · 低配不卡）',
+    'bg.glassPresetBalanced': '均衡',
+    'bg.glassPresetFine': '精细（高配）',
+    'bg.glassPresetHint': '掉帧就选「流畅」：单层浅模糊、无折射、关闭指针跟随。',
+    'bg.presetApplied': '已应用玻璃档位。',
     'bg.glassOpacity': '玻璃实色占比（越低越透）',
     'bg.glassBlur': '玻璃模糊',
     'bg.glassSaturate': '玻璃饱和度',
@@ -2561,7 +2687,7 @@ const DICTIONARIES = {
     'bg.refractFrequency': '折射纹理频率',
     'bg.performance': '性能模式（关闭折射、限制模糊）',
     'bg.reducedMotion': '跟随系统「减少动态效果」暂停视频',
-    'bg.perfHint': '大面积毛玻璃、视频解码与 SVG 折射都很吃性能。卡顿就开性能模式，或直接把折射设为 0。系统开启「减少透明效果」时玻璃会自动降级为不透明。',
+    'bg.perfHint': '掉帧优先选上面的「流畅」档：单层浅模糊、无折射、关闭指针高光跟随，均衡档还会把重绘限制在约 30fps。视频解码和 SVG 折射也很吃性能。系统开启「减少透明效果」时玻璃会自动降级为不透明。',
     'bg.errImageOnly': '只能选择图片文件。',
     'bg.errTooLarge': '图片太大，无法保存。请换一张小图，或改用图片链接。',
     'bg.errRead': '读取图片失败。',
@@ -2598,7 +2724,7 @@ const DICTIONARIES = {
     'mapping.title': 'Mapping options',
     'mapping.hint': 'Theme colours map onto Harness interface tokens. These switches decide what else the theme takes over.',
     'mapping.borders': 'Take over border colours',
-    'mapping.fonts': 'Take over fonts (text and code)',
+    'mapping.fonts': 'Take over fonts (can make CJK text look bold — off by default)',
     'mapping.radius': 'Derive the radius scale from the theme',
     'mapping.extras': 'Take over code blocks, scrollbars, hover fills',
     'mapping.statusTint': 'Tint success and warning states with the theme',
@@ -2622,7 +2748,15 @@ const DICTIONARIES = {
     'bg.tintClear': 'Clear cast',
     'bg.tintStrength': 'Cast strength',
     'bg.glass': 'Liquid glass on the composer',
-    'bg.glassHint': 'Applies to the chat input, not to the pasted tweakcn theme. Recipe adapted from kevinbism/liquid-glass-effect, Z1Code/glass-refraction and shuding/liquid-glass.',
+    'bg.glassHint': 'Applies to the chat input, not the pasted tweakcn theme. Every parameter has both a dropdown and a slider; the two stay in sync. Recipe adapted from kevinbism/liquid-glass-effect, Z1Code/glass-refraction and shuding/liquid-glass.',
+    'bg.stepSelect': 'Choose a step',
+    'bg.stepCustom': 'Custom',
+    'bg.glassPreset': 'Glass quality',
+    'bg.glassPresetLite': 'Smooth (recommended · no lag)',
+    'bg.glassPresetBalanced': 'Balanced',
+    'bg.glassPresetFine': 'Fine (high-end)',
+    'bg.glassPresetHint': 'If it stutters, pick "Smooth": one shallow blur, no refraction, no pointer tracking.',
+    'bg.presetApplied': 'Glass quality applied.',
     'bg.glassOpacity': 'Glass solidity (lower = clearer)',
     'bg.glassBlur': 'Glass blur',
     'bg.glassSaturate': 'Glass saturation',
@@ -2633,7 +2767,7 @@ const DICTIONARIES = {
     'bg.refractFrequency': 'Refraction texture scale',
     'bg.performance': 'Performance mode (no refraction, capped blur)',
     'bg.reducedMotion': 'Pause the video when the OS asks for reduced motion',
-    'bg.perfHint': 'Large frosted surfaces, video decoding and SVG refraction are all expensive. If it stutters, enable performance mode or set refraction to 0. The glass degrades to opaque when the OS asks for reduced transparency.',
+    'bg.perfHint': 'If it stutters, pick the "Smooth" quality above: one shallow blur, no refraction, no pointer-tracking repaints; "Balanced" also caps repaints at ~30 fps. Video decoding and SVG refraction are expensive too. The glass degrades to opaque when the OS asks for reduced transparency.',
     'bg.errImageOnly': 'Only image files can be chosen.',
     'bg.errTooLarge': 'The image is too large to save. Use a smaller one or an image URL.',
     'bg.errRead': 'Could not read the image.',
@@ -2683,7 +2817,15 @@ const DICTIONARIES = {
     const DEFAULT_OPTIONS = Object.freeze({
       borders: 'soft',
       radius: 'fit',
-      fonts: true,
+      // OFF by default. tweakcn's --font-sans stacks are Latin-only
+      // ("Geist, sans-serif"), and overrideTokens writes them INLINE on <body>,
+      // which beats DSH's built-in stack containing "PingFang SC" /
+      // "Microsoft YaHei". Chinese then falls back to a system font and
+      // font-synthesis fakes bold for the UI's many font-weight:500 elements —
+      // the reported "字体又是厚" problem. Leaving DSH's own font stack alone
+      // (and respecting the user's font settings) is the safe default. Users
+      // who really want a theme font can still opt in explicitly.
+      fonts: false,
       statusTint: false,
       extras: true,
       ramps: true,
@@ -2711,11 +2853,25 @@ const DICTIONARIES = {
       try {
         const parsed = JSON.parse(raw);
         if (parsed === null || typeof parsed !== 'object') return fallback;
+        const options = normalizeOptions(parsed.options);
+        // MIGRATION (font-weight / "字体变厚" fix): older builds defaulted
+        // `fonts` to true and persisted it. Re-applying that value on every
+        // startup silently replaced DSH's CJK font stack with the theme's
+        // Latin-only stack. Reset it once, record the migration, and persist so
+        // an existing user is fixed without losing the rest of their settings.
+        if (parsed.fontsMigrationV2 !== true && options.fonts === true) {
+          options.fonts = false;
+          try {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+              ...parsed, options, fontsMigrationV2: true,
+            }));
+          } catch { /* settings still work for this session */ }
+        }
         return {
           css: typeof parsed.css === 'string' ? parsed.css : '',
           name: typeof parsed.name === 'string' ? parsed.name : '',
           enabled: parsed.enabled === true,
-          options: normalizeOptions(parsed.options),
+          options,
           backdrop: normalizeBackdrop(parsed.backdrop).backdrop,
         };
       } catch {
@@ -2757,7 +2913,11 @@ const DICTIONARIES = {
     // ---------------------------------------------------------------------
 
     const CSS = `
-.cctRoot { display: flex; flex-direction: column; gap: 18px; }
+/* Keep the settings page from synthesizing fake bold (the UI uses
+   font-weight:500/700 while DSH ships no font-synthesis declaration). This is
+   scoped to our own card only; the app-wide fix is the fonts-default-off
+   migration in loadSaved(). */
+.cctRoot { display: flex; flex-direction: column; gap: 18px; font-synthesis: none; }
 .cctCard {
   border: 0.5px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);
@@ -2861,10 +3021,24 @@ const DICTIONARIES = {
 .cctCheck { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--dsw-alias-label-primary); cursor: pointer; }
 .cctCheck input { accent-color: var(--dsw-alias-brand-primary); }
 .cctInlineLabel { font-size: 12px; color: var(--dsw-alias-label-secondary); }
-.cctSliderRow { display: grid; grid-template-columns: minmax(110px, 1fr) 2fr 48px; gap: 10px; align-items: center; }
+.cctSliderRow { display: grid; grid-template-columns: minmax(110px, 1fr) 88px 2fr 48px; gap: 10px; align-items: center; }
 .cctSliderLabel { font-size: 12px; color: var(--dsw-alias-label-primary); }
 .cctSliderValue { font-family: var(--ds-font-family-code); font-size: 11px; color: var(--dsw-alias-label-secondary); text-align: right; }
 .cctSliderRow input[type=range] { width: 100%; accent-color: var(--dsw-alias-brand-primary); }
+.cctStepSelect {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 18px;
+  padding: 3px 6px;
+  border-radius: var(--dsw-radius-sm);
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-input-major);
+  color: var(--dsw-alias-label-primary);
+  width: 100%;
+}
+.cctStepSelect:focus-visible { border-color: var(--dsw-alias-brand-primary); }
+.cctPresetRow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.cctPresetHint { font-size: 12px; color: var(--dsw-alias-label-secondary); }
 .cctSliderRow input[type=color] { width: 40px; height: 28px; padding: 0; border: 0.5px solid var(--dsw-alias-border-l2); border-radius: var(--dsw-radius-sm); background: transparent; }
 .cctInputSmall {
   box-sizing: border-box; width: 100%;
@@ -2940,6 +3114,15 @@ const DICTIONARIES = {
       let card = null;
       let rect = null;
       let boundaryAttached = false;
+      // A blurred backdrop-filter surface repaints on every CSS-variable write.
+      // Capping those writes to ~30 fps (instead of one per pointermove/rAF)
+      // is the single cheapest way to stop a low-end GPU from dropping frames
+      // while the user types. `intervalMs = 0` keeps the original 60 fps path.
+      let intervalMs = 0;
+      let lastFlush = 0;
+      let timer = 0;
+      const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
+        ? performance.now() : Date.now());
 
       const mq = (q) => (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
         ? window.matchMedia(q) : null);
@@ -2974,6 +3157,8 @@ const DICTIONARIES = {
         pending = null;
         if (frame !== 0 && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(frame);
         frame = 0;
+        if (timer !== 0 && typeof clearTimeout === 'function') clearTimeout(timer);
+        timer = 0;
         detachMove();
       };
 
@@ -2985,20 +3170,41 @@ const DICTIONARIES = {
 
       const flush = () => {
         frame = 0;
+        if (timer !== 0 && typeof clearTimeout === 'function') clearTimeout(timer);
+        timer = 0;
         // B3: re-arming a frame when the pointer already left keeps an
         // unnecessary rAF alive for every drag across the window.
         const event = pending;
         pending = null;
         if (event === null || card === null) return;
         if (isStatic() || rect === null) { write(restingGlassVars()); return; }
+        lastFlush = now();
         write(pointerGlassVars(event, rect, { elasticShift: 6 }));
       };
 
       const onMove = (event) => {
         if (!enabled || card === null || !isMouse(event)) return;
         pending = { clientX: event.clientX, clientY: event.clientY };
-        if (frame === 0 && typeof requestAnimationFrame === 'function') {
-          frame = requestAnimationFrame(flush);
+        if (intervalMs <= 0) {
+          if (frame === 0 && typeof requestAnimationFrame === 'function') {
+            frame = requestAnimationFrame(flush);
+          }
+          return;
+        }
+        // Throttled path: at most one repaint per intervalMs. A trailing timer
+        // guarantees the LAST pointer position is still flushed after a burst.
+        const elapsed = now() - lastFlush;
+        if (elapsed >= intervalMs) {
+          if (frame === 0 && typeof requestAnimationFrame === 'function') {
+            frame = requestAnimationFrame(flush);
+          }
+        } else if (timer === 0 && typeof setTimeout === 'function') {
+          timer = setTimeout(() => {
+            timer = 0;
+            if (frame === 0 && typeof requestAnimationFrame === 'function') {
+              frame = requestAnimationFrame(flush);
+            }
+          }, Math.max(0, intervalMs - elapsed));
         }
       };
 
@@ -3067,10 +3273,16 @@ const DICTIONARIES = {
       };
 
       return {
-        enable() {
+        /** @param ms - 0 = unthrottled (fine/balanced); 32 ≈ 30 fps (balanced);
+         *  0 also means "static" when the controller skips enable() entirely. */
+        enable(ms = 0) {
+          intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
           if (enabled || !canListen) return;
           enabled = true;
           attachBoundary();
+        },
+        configure(ms = 0) {
+          intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
         },
         disable() {
           if (!enabled) return;
@@ -3102,6 +3314,7 @@ const DICTIONARIES = {
       let dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
       let disposed = false;
       let captionFill = null;
+      let captionDrag = null;
 
       const emit = () => {
         if (disposed) return;
@@ -3120,6 +3333,8 @@ const DICTIONARIES = {
 
       /** Remove every DOM node this plugin created for the wallpaper. */
       const teardownDom = () => {
+        if (captionDrag !== null) captionDrag.remove();
+        captionDrag = null;
         if (dom.media !== null && dom.media.tagName === 'VIDEO') {
           try { dom.media.pause(); } catch { /* already gone */ }
           dom.media.removeAttribute('src');
@@ -3178,6 +3393,18 @@ const DICTIONARIES = {
         style.textContent = css;
         document.head.appendChild(style);
         dom.style = style;
+
+        const needsCaptionDrag = bd.enabled === true && bd.source !== ''
+          && document.documentElement.hasAttribute('data-windows-titlebar');
+        if (needsCaptionDrag && captionDrag === null) {
+          captionDrag = document.createElement('div');
+          captionDrag.id = 'dsh-custom-theme-window-drag';
+          captionDrag.setAttribute('aria-hidden', 'true');
+          body.appendChild(captionDrag);
+        } else if (!needsCaptionDrag && captionDrag !== null) {
+          captionDrag.remove();
+          captionDrag = null;
+        }
 
         // Only rebuild the SVG holder when its definition actually changed;
         // removing a filter that is currently referenced makes the composer
@@ -3279,8 +3506,21 @@ const DICTIONARIES = {
         let warnings = [];
         if (tokensDirty) warnings = reapply().warnings;
         applyDom();
-        if (state.backdrop.glass === true) pointerGlass.enable();
-        else pointerGlass.disable();
+        const bd = state.backdrop;
+        if (bd.glass !== true) {
+          // Glass off: no listeners, no per-frame work at all.
+          pointerGlass.disable();
+        } else if (isLiteGlass(bd)) {
+          // "流畅 / lite": the biggest win for low-end PCs. A static specular
+          // light needs zero pointer listeners and zero CSS-variable writes
+          // while the user types — only one shallow blur() remains.
+          pointerGlass.disable();
+        } else {
+          // "均衡 / balanced" repaints at most ~30 fps; "精细 / fine" and
+          // custom keep the original per-rAF path.
+          pointerGlass.configure(bd.glassPreset === 'fine' ? 0 : 32);
+          pointerGlass.enable(bd.glassPreset === 'fine' ? 0 : 32);
+        }
         return { count: lastCount, warnings };
       };
 
@@ -3470,8 +3710,18 @@ const DICTIONARIES = {
         }, [controller, t]);
 
         /** One wallpaper control; merges into current settings. */
+        const GLASS_KEYS = new Set([
+          'glassOpacity', 'glassBlur', 'glassSaturate', 'glassRadius',
+          'glassHighlight', 'glassShadow', 'refract', 'refractFrequency',
+          'performance',
+        ]);
+
         const setBackdrop = useCallback((key, value) => {
-          const result = controller.update({ backdrop: { [key]: value } });
+          // Hand-editing a glass number (slider or dropdown) means the numbers
+          // no longer match a named look. Wallpaper sliders are independent.
+          const patch = { [key]: value };
+          if (GLASS_KEYS.has(key)) patch.glassPreset = 'custom';
+          const result = controller.update({ backdrop: patch });
           if (result.saveError !== null) {
             setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
           } else if (result.sourceError !== null && result.sourceError !== undefined) {
@@ -3479,18 +3729,55 @@ const DICTIONARIES = {
           }
         }, [controller, t]);
 
+        /** Apply a whole named glass look in one controller update. */
+        const setGlassPreset = useCallback((id) => {
+          const values = GLASS_PRESETS[id];
+          const result = controller.update({
+            backdrop: values === undefined
+              ? { glassPreset: 'custom' }
+              : { ...values, glassPreset: id },
+          });
+          if (result.saveError !== null) {
+            setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
+          } else if (values !== undefined) {
+            setStatus({ kind: 'ok', text: t('bg.presetApplied') });
+          }
+        }, [controller, t]);
+
         const bd = state.backdrop;
 
-        /** A labelled range input for the backdrop settings. */
-        const slider = (key, label, min, max, step, suffix) => h('div', { key: `s-${key}`, className: 'cctSliderRow' }, [
-          h('label', { key: 'l', className: 'cctSliderLabel', htmlFor: `cct-${key}` }, label),
-          h('input', {
-            key: 'i', id: `cct-${key}`, type: 'range', min, max, step,
-            value: bd[key],
-            onChange: event => setBackdrop(key, Number(event.target.value)),
-          }),
-          h('span', { key: 'v', className: 'cctSliderValue' }, `${bd[key]}${suffix ?? ''}`),
-        ]);
+        /**
+         * A labelled range input PLUS a discrete-stop dropdown. Both are kept
+         * (the user asked for a choice instead of only dragging): picking a
+         * stop sets the exact value, dragging the slider moves the dropdown to
+         * "custom". The two controls read/write the same state, so they stay
+         * in sync automatically.
+         */
+        const slider = (key, label, min, max, step, suffix) => {
+          const stops = SLIDER_STEPS[key] ?? [];
+          const current = bd[key];
+          const selected = stops.includes(current) ? String(current) : 'custom';
+          return h('div', { key: `s-${key}`, className: 'cctSliderRow' }, [
+            h('label', { key: 'l', className: 'cctSliderLabel', htmlFor: `cct-${key}` }, label),
+            stops.length === 0 ? null : h('select', {
+              key: 'd', className: 'cctStepSelect', value: selected,
+              'aria-label': `${label} · ${t('bg.stepSelect')}`,
+              onChange: event => {
+                if (event.target.value === 'custom') return;
+                setBackdrop(key, Number(event.target.value));
+              },
+            }, [
+              ...stops.map(value => h('option', { key: String(value), value: String(value) }, `${value}${suffix ?? ''}`)),
+              h('option', { key: 'custom', value: 'custom' }, t('bg.stepCustom')),
+            ]),
+            h('input', {
+              key: 'i', id: `cct-${key}`, type: 'range', min, max, step,
+              value: current,
+              onChange: event => setBackdrop(key, Number(event.target.value)),
+            }),
+            h('span', { key: 'v', className: 'cctSliderValue' }, `${current}${suffix ?? ''}`),
+          ]);
+        };
 
         const toggle = (key, label) => h('label', { key: `c-${key}`, className: 'cctCheck' }, [
           h('input', {
@@ -3673,6 +3960,23 @@ const DICTIONARIES = {
             h('div', { className: 'cctDivider', key: 'div1' }),
 
             toggle('glass', t('bg.glass')),
+            // One-click looks: the fastest way to get a usable frame rate on
+            // a low-end PC. Both the dropdown AND the sliders below remain
+            // available and stay in sync.
+            h('div', { className: 'cctPresetRow', key: 'glassPreset' }, [
+              h('label', { key: 'l', className: 'cctInlineLabel', htmlFor: 'cct-glass-preset' }, t('bg.glassPreset')),
+              h('select', {
+                key: 's', id: 'cct-glass-preset', className: 'cctSelect',
+                value: bd.glassPreset,
+                onChange: event => setGlassPreset(event.target.value),
+              }, [
+                h('option', { key: 'lite', value: 'lite' }, t('bg.glassPresetLite')),
+                h('option', { key: 'balanced', value: 'balanced' }, t('bg.glassPresetBalanced')),
+                h('option', { key: 'fine', value: 'fine' }, t('bg.glassPresetFine')),
+                h('option', { key: 'custom', value: 'custom' }, t('bg.stepCustom')),
+              ]),
+              h('span', { key: 'h', className: 'cctPresetHint' }, t('bg.glassPresetHint')),
+            ]),
             h('div', { className: 'cctHint', key: 'glassHint' }, t('bg.glassHint')),
             slider('glassOpacity', t('bg.glassOpacity'), 0, 70, 1, '%'),
             slider('glassBlur', t('bg.glassBlur'), 0, 32, 1, 'px'),
@@ -3892,6 +4196,22 @@ const DICTIONARIES = {
         document.head.appendChild(tag);
         return () => tag.remove();
       }, 'custom-theme: section stylesheet');
+
+      // Windows window-drag repair. Independent of the wallpaper/glass
+      // switches: a third-party overlay covers the whole window with
+      // `-webkit-app-region:none`, which cancels DSH's draggable caption strip.
+      // Scoped to `html[data-windows-titlebar]`, so other platforms get an
+      // inert (but harmless) stylesheet.
+      ctx.effect(() => {
+        const dragCss = buildWindowDragCss();
+        if (dragCss === '') return () => {};
+        const tag = document.createElement('style');
+        tag.dataset.plugin = PLUGIN_ID;
+        tag.dataset.pluginCss = `${PLUGIN_ID}/window-drag`;
+        tag.textContent = dragCss;
+        document.head.appendChild(tag);
+        return () => tag.remove();
+      }, 'custom-theme: window drag repair');
 
       /** The theme service is a hard dependency; `inject` guarantees it here. */
       const resolveTheme = () => {

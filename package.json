@@ -1,6 +1,6 @@
 {
   "name": "dsh-custom-theme",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Paste a tweakcn theme CSS into DeepSeek Harness and get light + dark palettes, with optional wallpaper and a liquid-glass composer",
   "type": "module",
   "main": "index.js",

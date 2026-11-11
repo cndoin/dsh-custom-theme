@@ -341,7 +341,9 @@ test('a v0 export keeps its real font stacks from @theme inline', () => {
   `);
   assert.equal(parsed.shared['font-sans'], 'Inter, Inter Fallback');
   assert.equal(parsed.shared['font-mono'], '"JetBrains Mono", monospace');
-  const { tokens } = buildOverrides(parsed, {});
+  // Fonts are opt-in now (the "字体变厚" fix): pass fonts:true explicitly to
+  // exercise the font-stack mapping itself.
+  const { tokens } = buildOverrides(parsed, { fonts: true });
   assert.equal(tokens['--dsw-font-family'].light, 'Inter, Inter Fallback');
 
   // The editor's v4 export has only `var(--font-sans)` self-references there;
@@ -615,6 +617,24 @@ test('options can turn mapping areas off', async () => {
   assert.equal(leanTokens['--dsw-radius-md'], undefined);
   assert.equal(leanTokens['--dsw-font-family'], undefined);
   assert.equal(leanTokens['--dsw-alias-markdown-code-block'], undefined);
+});
+
+test('fonts are OFF by default so DSH keeps its CJK font stack (字体变厚 fix)', async () => {
+  // The reported "字体又是厚" problem: tweakcn's --font-sans (e.g.
+  // "Geist, sans-serif") has NO CJK family, yet overrideTokens writes it
+  // INLINE on <body>, beating DSH's built-in "PingFang SC"/"Microsoft YaHei"
+  // stack and the user's own font settings. Chinese falls back to a system
+  // font and font-synthesis fakes bold for font-weight:500 UI text. The safe
+  // default is to leave DSH's font stack alone.
+  const parsed = parseThemeCss(await fixture('claude.oklch.css'));
+  const defaultTokens = buildOverrides(parsed, {}).tokens;
+  assert.equal(defaultTokens['--dsw-font-family'], undefined,
+    'no sans override unless the user explicitly opts in');
+  assert.equal(defaultTokens['--ds-font-family-code'], undefined,
+    'no code-font override either');
+  // Explicit opt-in still works (the feature is not deleted).
+  const optIn = buildOverrides(parsed, { fonts: true }).tokens;
+  assert.equal(optIn['--dsw-font-family'].light, parsed.shared['font-sans']);
 });
 
 test('status tint is opt-in', async () => {
@@ -1063,7 +1083,10 @@ test('the inlined core in client.js matches src/core.js behaviour', async () => 
   }
   assert.ok(registered.includes('settings.section'), 'registers a settings page');
   assert.ok(!registered.includes('shell.overlay'), 'the tail caret is pure CSS — no slot component');
-  assert.equal(head.length, 1, 'injects exactly one stylesheet');
+  // Two stylesheets: the settings-page CSS and the Windows window-drag repair.
+  assert.equal(head.length, 2, 'injects the section and window-drag stylesheets');
+  assert.ok(head.some(tag => String(tag.dataset.pluginCss).includes('window-drag')),
+    'the Windows drag repair has its own stylesheet');
   assert.deepEqual(layers, [], 'nothing is applied without a saved theme');
 
   // A saved theme is stacked on activation and removed with the plugin.
