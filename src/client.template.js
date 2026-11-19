@@ -685,6 +685,15 @@ window.__ModuleLoader__.load({
         if (dom.layer === null && mediaInfo !== null) {
           const layer = document.createElement('div');
           layer.id = BACKDROP_LAYER_ID;
+          // DSH >= 0.2.2-rc.2 (macOS "window-drag-regions"): Desktop no longer
+          // grants a global no-drag exclusion to arbitrary content, so an
+          // overlay that can cover a header must declare its own region. This
+          // layer covers the whole window, so it declares itself as excluded —
+          // otherwise it would contribute a draggable rectangle over the header.
+          // It is also `pointer-events: none`, so this only affects the window
+          // region computation, never clicks. Harmless on Web and Windows,
+          // where the attribute is not read.
+          layer.setAttribute('data-window-drag-exclude', '');
           const media = document.createElement(mediaInfo.tag);
           for (const [key, value] of Object.entries(mediaInfo.attributes)) {
             if (value === true) media.setAttribute(key, '');
@@ -1501,6 +1510,40 @@ window.__ModuleLoader__.load({
           inject: () => ({ t }),
         }, Section);
       });
+
+      // `settings.section.icon` is a `list` slot the settings shell declares as
+      // `{ kind: 'list', scope: 'root', inline: true }` and renders next to each
+      // section label with `{ size, active }`. Without an entry the shell falls
+      // back to a generic gear, so this section would look like every other
+      // third-party one.
+      ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+        name: 'settings.section.icon',
+        id: 'custom-theme',
+        order: 32,
+      }, function CustomThemeIcon(props) {
+        const size = typeof props?.size === 'number' ? props.size : 16;
+        // A palette, drawn on a 16-unit grid so it stays crisp at 16px.
+        return h('svg', {
+          width: size,
+          height: size,
+          viewBox: '0 0 16 16',
+          fill: 'none',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          style: { display: 'block' },
+        }, [
+          h('path', {
+            key: 'outline',
+            d: 'M8 1.75a6.25 6.25 0 1 0 0 12.5c.9 0 1.5-.55 1.5-1.3 0-.72-.55-1.2-.55-1.95 0-.7.57-1.25 1.3-1.25h.75A3.25 3.25 0 0 0 14.25 6.5C14.25 3.9 11.45 1.75 8 1.75Z',
+            stroke: 'currentColor',
+            'stroke-width': '1.3',
+            'stroke-linejoin': 'round',
+          }),
+          h('circle', { key: 'dot-a', cx: '5.4', cy: '6.2', r: '0.95', fill: 'currentColor' }),
+          h('circle', { key: 'dot-b', cx: '8.1', cy: '4.6', r: '0.95', fill: 'currentColor' }),
+          h('circle', { key: 'dot-c', cx: '5.4', cy: '9.2', r: '0.95', fill: 'currentColor' }),
+        ]);
+      }));
     }
 
     return {

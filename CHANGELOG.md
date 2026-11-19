@@ -3,6 +3,72 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.1.0] - 2026-11-19
+
+Track DSH **0.2.2-rc.5** (the current stable build and the `nightly` feed; rc.5 is the
+latest — checked against `…/feeds/win-x64/nightly.yml`, which still reports `0.2.2-rc.5`).
+Every runtime contract the plugin uses was re-verified inside the shipped `app.asar`; no
+breaking change affected it. Three of DSH's own changes did need work, and one existing
+bug was confirmed still present.
+
+### Added
+
+- **17 tokens introduced in rc.5 are now mapped**, so those surfaces follow the theme
+  instead of staying stock: the card plates (`card-fill`, `card-fill-hover`,
+  `card-tile-fill`), the inverted hover cards and their four labels
+  (`hovercard-bg`, `hovercard-label-primary/-secondary/-tertiary`,
+  `hovercard-state-done/-error`), `label-on-color`, `label-error`, `border-selected`,
+  the three activity charts (`chart-messages/-system/-tools`) and `trajectory-accent`.
+- **A palette icon for the Settings section.** rc.5 renders a `settings.section.icon`
+  list slot (`{ size, active }`) next to each section label; without an entry the shell
+  falls back to a generic gear, which made this section indistinguishable from any other
+  third-party one. The icon is inline SVG on a 16-unit grid and inherits `currentColor`.
+- Regression tests for the new tokens and for both window-region repairs, plus an
+  allowlist test that fails if DSH ever starts declaring one of the ten tokens it
+  currently reads but never defines.
+
+### Fixed
+
+- **macOS window dragging with a wallpaper enabled.** DSH 0.2.2-rc.2 removed the global
+  `no-drag` exclusion that arbitrary content used to inherit (upgrade guide
+  `window-drag-regions`), so a custom overlay covering the header must now declare its own
+  region. The wallpaper layer is mounted `position: fixed; inset: 0` across the window, so
+  the client half now sets `data-window-drag-exclude` on it. It is already
+  `pointer-events: none`, so only the region computation changes — never click behaviour.
+
+### Changed
+
+- **Test fixtures regenerated from 0.2.2-rc.5.** `dsh-token-defs.txt` grew from 441 to 477
+  names (`token-usage.json` from 196 to 288 rows). The usage snapshot now counts `var()`
+  reads in the built `lib/` bundles only, since the shipped `src/` CSS repeats the same
+  rules and would double-count.
+- Token coverage is now **155–171 tokens per theme** (was 140–156).
+- 108 unit tests (was 97): 75 core + 33 backdrop.
+
+### Verified, unchanged
+
+- `__ModuleLoader__.load({ id, factory })`, `ctx.theme.overrideTokens` (still requires a
+  `{ light, dark }` pair and still rejects a bare string), `ctx.locale.register` / `bind`,
+  `ctx.slots.inject('settings.section')` (still `{ kind: 'list', scope: 'root' }`, function
+  `label`, `order` sorting), the generator form of `ctx.effect` that `slots.inject` relies
+  on, and the stable `data-ds-dark-theme` / `data-windows-titlebar` / `data-composer-card` /
+  `data-window-drag` selectors.
+- **A DSH-side gap, documented rather than worked around:** ten tokens that shipped
+  components read (`--dsw-alias-label-error`, `--dsw-alias-fill-l1`, `--dsw-alias-bg-l2`, …)
+  are never declared by DSH itself, so those consumers inherit a colour. Since an
+  undeclared custom property inherits, mapping `label-error` from the theme is correct and
+  the other nine stay untouched. Full table in `docs/evidence.md`.
+
+### Documentation
+
+- Version references corrected from 0.2.2-rc.1 to 0.2.2-rc.5 (README ×2, README.zh-CN,
+  docs/evidence, CHANGELOG).
+- `docs/ai-install.md` no longer reads as if installing into `desktop` were forbidden
+  outright: the `dsh` CLI cannot write that profile, but the app's plugin manager can, and
+  that is how a Desktop-only machine installs the plugin.
+
+---
+
 ## [1.0.1] - 2026-11-11
 
 Compatibility check against the installed DSH **0.2.2-rc.1** (the same build the
@@ -104,3 +170,4 @@ First public release.
 ---
 
 [1.0.0]: https://github.com/cndoin/dsh-custom-theme/releases/tag/v1.0.0
+[1.1.0]: https://github.com/cndoin/dsh-custom-theme/releases/tag/v1.1.0

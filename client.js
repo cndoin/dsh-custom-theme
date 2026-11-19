@@ -1740,6 +1740,49 @@ function buildOverrides(parsedInput, options = {}) {
       pair(parsed, mode => pick(parsed, mode, 'chart-5', 'chart-4')));
   }
 
+  // --- surfaces added in DSH 0.2.2-rc.5 ---------------------------------
+  // Placed here because these reuse `invertedPlate` (tooltips above) and
+  // `success` (status block above); declaring them earlier would be a TDZ error.
+  //
+  // Card plates. The shipped sheet reads `neutral-50` / `neutral-100` in light
+  // and `neutral-850` / `neutral-800` in dark — one and two rungs above the page,
+  // the same relationship `raised` already encodes, so they reuse that ladder.
+  put('--dsw-alias-card-fill', pair(parsed, raised));
+  put('--dsw-alias-card-fill-hover', pair(parsed, mode => liftFrom(raised(mode), page(mode), 6)));
+  // Shipped as `neutral-00` at 50% light / 5% dark: a wash, not a surface.
+  put('--dsw-alias-card-tile-fill',
+    pair(parsed, mode => tintOverlay(pick(parsed, mode, 'foreground'), isLightColor(page(mode)) ? 5 : 4)));
+
+  // Hover cards are a deliberately inverted plate in both schemes (shipped dark
+  // `neutral-bluish-850` under near-white labels), exactly like tooltips.
+  const hoverInk = mode => pick(parsed, mode, 'background', 'primary-foreground');
+  put('--dsw-alias-hovercard-bg', pair(parsed, mode => tintOverlay(invertedPlate(mode), 92)));
+  put('--dsw-alias-hovercard-label-primary', pair(parsed, hoverInk));
+  put('--dsw-alias-hovercard-label-secondary',
+    pair(parsed, mode => mixWith(hoverInk(mode), page(mode), 30)));
+  put('--dsw-alias-hovercard-label-tertiary',
+    pair(parsed, mode => mixWith(hoverInk(mode), page(mode), 45)));
+  put('--dsw-alias-hovercard-state-done', pair(parsed, success));
+  put('--dsw-alias-hovercard-state-error', pair(parsed, mode => pick(parsed, mode, 'destructive')));
+
+  // Text on a saturated plate (shipped `neutral-bluish-00`, i.e. white).
+  put('--dsw-alias-label-on-color',
+    pair(parsed, mode => pick(parsed, mode, 'primary-foreground', 'background')));
+  // Read only by failed-job rows. DSH never declares it, so leaving it unmapped
+  // would make those rows inherit a colour instead of the error state.
+  put('--dsw-alias-label-error', pair(parsed, mode => pick(parsed, mode, 'destructive')));
+
+  put('--dsw-alias-border-selected', pair(parsed, mode => pick(parsed, mode, 'ring', 'primary')));
+  put('--dsw-alias-chart-messages', pair(parsed, mode => pick(parsed, mode, 'chart-1', 'primary')));
+  put('--dsw-alias-chart-system',
+    pair(parsed, mode => pick(parsed, mode, 'chart-2', 'muted-foreground')));
+  put('--dsw-alias-chart-tools',
+    pair(parsed, mode => pick(parsed, mode, 'chart-3', 'chart-4', 'primary')));
+  put('--dsw-alias-trajectory-accent',
+    pair(parsed, mode => pick(parsed, mode, 'chart-2', 'ring', 'primary')));
+  put('--dsw-specific-file-upload-track',
+    pair(parsed, mode => tintOverlay(pick(parsed, mode, 'foreground'), 8)));
+
   // --- borders ----------------------------------------------------------
   if (settings.borders !== 'off') {
     const soften = settings.borders === 'soft';
@@ -2245,29 +2288,42 @@ body[${BACKDROP_ATTR}="on"] { background-color: transparent !important; }
 }
 
 /**
- * Windows window-drag repair. Independent of the wallpaper and glass switches:
- * it must apply whenever this plugin is loaded, because the breakage comes from
- * a third-party overlay that covers the whole window.
+ * Window-drag repair, for the hosts where a full-window overlay would otherwise
+ * cancel DSH's own draggable regions.
  *
- * Electron derives the draggable region as
- *   (every `-webkit-app-region: drag` rectangle)
- *   MINUS (every `-webkit-app-region: no-drag` rectangle)
- * and the subtraction ignores `pointer-events`. The dsh-pet "吃白饭" mini-game
- * mounts `#dsh-pet-baifan-root` as `position:fixed; inset:0` over the entire
- * window with `-webkit-app-region:none !important`; that single full-window
- * no-drag rectangle cancels DSH's 40px caption strip, so the title bar cannot be
- * dragged and double-click-to-maximize stops working (observed on DSH
- * 0.2.2-rc.1, Windows).
+ * Two independent problems are covered here; neither depends on the wallpaper or
+ * glass switches, so this stylesheet is emitted whenever the plugin is loaded.
  *
- * `initial` restores the property to "unset", which removes the layer from that
- * subtraction without touching its own pointer behaviour. The selector carries
- * specificity (1,2,2) + `!important`, which outranks the overlay's (1,0,0) +
- * `!important` while leaving dsh-pet's own code untouched (so updating the pet
- * plugin cannot break this, and this cannot break the pet).
+ * 1. Windows — Electron derives the draggable region as
+ *      (every `-webkit-app-region: drag` rectangle)
+ *      MINUS (every `-webkit-app-region: no-drag` rectangle)
+ *    and that subtraction ignores `pointer-events`. The dsh-pet "吃白饭"
+ *    mini-game mounts `#dsh-pet-baifan-root` as `position:fixed; inset:0` over
+ *    the whole window with `-webkit-app-region:none !important`; that single
+ *    full-window no-drag rectangle cancels DSH's 40px caption strip, so the
+ *    title bar cannot be dragged and double-click-to-maximize stops working
+ *    (observed on Windows).
+ *    `initial` restores the property to "unset", removing the layer from that
+ *    subtraction without touching its pointer behaviour. The selector carries
+ *    specificity (1,2,2) + `!important`, outranking the overlay's (1,0,0) +
+ *    `!important` while leaving dsh-pet's own code untouched, so updating the
+ *    pet plugin cannot break this and this cannot break the pet.
  *
- * Scoped to `html[data-windows-titlebar]`, so macOS/Linux output is empty.
+ * 2. macOS (DSH ≥ 0.2.2-rc.2, `window-drag-regions` upgrade guide) — Desktop no
+ *    longer grants a global `no-drag` exclusion to controls and ARIA roles
+ *    anywhere in the page. Only controls inside `data-window-drag` rows or
+ *    `data-window-drag-controls` scopes get one automatically, and a custom
+ *    overlay that covers a header must now declare its own region. The wallpaper
+ *    layer is such an overlay: it is mounted `position: fixed; inset: 0` over the
+ *    window, so the client half marks it with `data-window-drag-exclude` and the
+ *    rule below keeps its children out of any inherited drag region. The layer
+ *    is `pointer-events: none`, so this changes only the window-region
+ *    computation, never click behaviour.
  *
- * @returns CSS text, or '' when this is not a Windows titlebar host.
+ * Scoped to the platforms that need it, so a plain Web page gets an inert (but
+ * harmless) stylesheet.
+ *
+ * @returns CSS text.
  */
 function buildWindowDragCss() {
   return `
@@ -2278,6 +2334,12 @@ html[data-windows-titlebar] body [id^="dsh-pet-baifan"] {
 html[data-windows-titlebar] body #dsh-pet-baifan-root *,
 html[data-windows-titlebar] body [id^="dsh-pet-baifan"] * {
   -webkit-app-region: initial !important;
+}
+[data-platform="darwin"] #${BACKDROP_LAYER_ID},
+[data-platform="darwin"] #${BACKDROP_LAYER_ID} > img,
+[data-platform="darwin"] #${BACKDROP_LAYER_ID} > video,
+[data-platform="darwin"] #${BACKDROP_LAYER_ID} > .dsh-backdrop-scrim {
+  -webkit-app-region: no-drag;
 }
 `.trim();
 }
@@ -3427,6 +3489,15 @@ const DICTIONARIES = {
         if (dom.layer === null && mediaInfo !== null) {
           const layer = document.createElement('div');
           layer.id = BACKDROP_LAYER_ID;
+          // DSH >= 0.2.2-rc.2 (macOS "window-drag-regions"): Desktop no longer
+          // grants a global no-drag exclusion to arbitrary content, so an
+          // overlay that can cover a header must declare its own region. This
+          // layer covers the whole window, so it declares itself as excluded —
+          // otherwise it would contribute a draggable rectangle over the header.
+          // It is also `pointer-events: none`, so this only affects the window
+          // region computation, never clicks. Harmless on Web and Windows,
+          // where the attribute is not read.
+          layer.setAttribute('data-window-drag-exclude', '');
           const media = document.createElement(mediaInfo.tag);
           for (const [key, value] of Object.entries(mediaInfo.attributes)) {
             if (value === true) media.setAttribute(key, '');
@@ -4243,6 +4314,40 @@ const DICTIONARIES = {
           inject: () => ({ t }),
         }, Section);
       });
+
+      // `settings.section.icon` is a `list` slot the settings shell declares as
+      // `{ kind: 'list', scope: 'root', inline: true }` and renders next to each
+      // section label with `{ size, active }`. Without an entry the shell falls
+      // back to a generic gear, so this section would look like every other
+      // third-party one.
+      ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+        name: 'settings.section.icon',
+        id: 'custom-theme',
+        order: 32,
+      }, function CustomThemeIcon(props) {
+        const size = typeof props?.size === 'number' ? props.size : 16;
+        // A palette, drawn on a 16-unit grid so it stays crisp at 16px.
+        return h('svg', {
+          width: size,
+          height: size,
+          viewBox: '0 0 16 16',
+          fill: 'none',
+          'aria-hidden': 'true',
+          focusable: 'false',
+          style: { display: 'block' },
+        }, [
+          h('path', {
+            key: 'outline',
+            d: 'M8 1.75a6.25 6.25 0 1 0 0 12.5c.9 0 1.5-.55 1.5-1.3 0-.72-.55-1.2-.55-1.95 0-.7.57-1.25 1.3-1.25h.75A3.25 3.25 0 0 0 14.25 6.5C14.25 3.9 11.45 1.75 8 1.75Z',
+            stroke: 'currentColor',
+            'stroke-width': '1.3',
+            'stroke-linejoin': 'round',
+          }),
+          h('circle', { key: 'dot-a', cx: '5.4', cy: '6.2', r: '0.95', fill: 'currentColor' }),
+          h('circle', { key: 'dot-b', cx: '8.1', cy: '4.6', r: '0.95', fill: 'currentColor' }),
+          h('circle', { key: 'dot-c', cx: '5.4', cy: '9.2', r: '0.95', fill: 'currentColor' }),
+        ]);
+      }));
     }
 
     return {

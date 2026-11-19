@@ -21,16 +21,18 @@
 
 ## 安装
 
-要求：有 CLI 管理的 profile（默认 `web`）。**`desktop` profile 归 Electron 应用独占，CLI 会拒绝写入，
-不要往那里装。** Node.js ≥ 22.12.0（见 `package.json` 的 `engines`）。
+要求：有 CLI 管理的 profile（默认 `web`）。**`desktop` profile 归 Electron 应用独占，`dsh` CLI 会拒绝写入，
+请改用应用内的插件管理器安装。** Node.js ≥ 22.12.0（见 `package.json` 的 `engines`）。
 
-> **版本兼容性（2026-11-11 核对）**：当前安装与 nightly 服务器均为 **DSH 0.2.2-rc.1**，
-> 与插件开发时基于的版本一致，并没有升级（11/9 那次「更新」其实是同版本重新下载，
-> 因文件被占用 `MoveFileExW / Windows error 32` 失败，未替换任何文件）。已逐一核对当前
-> `app.asar` 内部：`__ModuleLoader__.load({id, factory})`、`ctx.theme.overrideTokens`、
-> `ctx.locale`、`ctx.slots.inject('settings.section')`、注入的三个客户端包，以及
-> `body[data-ds-dark-theme]` / `html[data-windows-titlebar]` / `[data-composer-card]` /
-> `[data-window-drag]` 等稳定选择器全部存在且未改名 —— **完全兼容，无需为升级改动**。
+> **版本兼容性（2026-11-19 核对，安装版与 `nightly` 通道一致）**：当前为 **DSH 0.2.2-rc.5**。
+> 已逐一核对当前 `app.asar` 内部：`__ModuleLoader__.load({id, factory})`、
+> `ctx.theme.overrideTokens`（仍要求 `{ light, dark }` 成对）、`ctx.locale.register` / `bind`、
+> `ctx.slots.inject('settings.section')`（仍由 `sidebar.settings` 声明为
+> `{ kind: 'list', scope: 'root' }`，`label` 支持函数、`order` 排序）、`slots.inject` 依赖的
+> generator 形式 `ctx.effect`，以及 `body[data-ds-dark-theme]` / `html[data-windows-titlebar]` /
+> `[data-composer-card]` / `[data-window-drag]` 等稳定选择器 —— **均未改名**。
+> 有两处确实变了，本版已跟进：**令牌表新增 50 个令牌**（已映射其中 17 个）；
+> macOS Desktop 不再给任意内容全局的**窗口拖拽豁免**（见下文 `window-drag-regions` 说明）。
 
 三条命令：
 
@@ -124,7 +126,7 @@ grep -A6 '"dsh"' "$HOME/.dsh/profiles/web/package.json"
 6. **降级齐全**：无 `backdrop-filter` 回退实色、降低透明度偏好时完全不透明、页面隐藏时暂停视频、
    性能模式把模糊压到 8px。
 
-共接管 **140–156 个令牌**（alias 约 110 + 静态色阶 38）。几个刻意保留的决定
+共接管 **155–171 个令牌**（alias 约 125 + 静态色阶 38）。几个刻意保留的决定
 （边框默认降透明度、近灰 `--destructive` 忽略、`--chart-3/-4` 需过色相窗口、hover 方向按模式分）
 在英文 README 逐条说明。
 
@@ -134,7 +136,7 @@ grep -A6 '"dsh"' "$HOME/.dsh/profiles/web/package.json"
 
 ```bash
 node scripts/build.mjs              # 从 src/ 生成 client.js
-npm test                            # 97 项单测 + 全部兼容性脚本
+npm test                            # 108 项单测 + 全部兼容性脚本
 node scripts/dump-mapping.mjs X.css # 打印某套主题的完整映射表（调试用）
 ```
 

@@ -1710,6 +1710,49 @@ export function buildOverrides(parsedInput, options = {}) {
       pair(parsed, mode => pick(parsed, mode, 'chart-5', 'chart-4')));
   }
 
+  // --- surfaces added in DSH 0.2.2-rc.5 ---------------------------------
+  // Placed here because these reuse `invertedPlate` (tooltips above) and
+  // `success` (status block above); declaring them earlier would be a TDZ error.
+  //
+  // Card plates. The shipped sheet reads `neutral-50` / `neutral-100` in light
+  // and `neutral-850` / `neutral-800` in dark — one and two rungs above the page,
+  // the same relationship `raised` already encodes, so they reuse that ladder.
+  put('--dsw-alias-card-fill', pair(parsed, raised));
+  put('--dsw-alias-card-fill-hover', pair(parsed, mode => liftFrom(raised(mode), page(mode), 6)));
+  // Shipped as `neutral-00` at 50% light / 5% dark: a wash, not a surface.
+  put('--dsw-alias-card-tile-fill',
+    pair(parsed, mode => tintOverlay(pick(parsed, mode, 'foreground'), isLightColor(page(mode)) ? 5 : 4)));
+
+  // Hover cards are a deliberately inverted plate in both schemes (shipped dark
+  // `neutral-bluish-850` under near-white labels), exactly like tooltips.
+  const hoverInk = mode => pick(parsed, mode, 'background', 'primary-foreground');
+  put('--dsw-alias-hovercard-bg', pair(parsed, mode => tintOverlay(invertedPlate(mode), 92)));
+  put('--dsw-alias-hovercard-label-primary', pair(parsed, hoverInk));
+  put('--dsw-alias-hovercard-label-secondary',
+    pair(parsed, mode => mixWith(hoverInk(mode), page(mode), 30)));
+  put('--dsw-alias-hovercard-label-tertiary',
+    pair(parsed, mode => mixWith(hoverInk(mode), page(mode), 45)));
+  put('--dsw-alias-hovercard-state-done', pair(parsed, success));
+  put('--dsw-alias-hovercard-state-error', pair(parsed, mode => pick(parsed, mode, 'destructive')));
+
+  // Text on a saturated plate (shipped `neutral-bluish-00`, i.e. white).
+  put('--dsw-alias-label-on-color',
+    pair(parsed, mode => pick(parsed, mode, 'primary-foreground', 'background')));
+  // Read only by failed-job rows. DSH never declares it, so leaving it unmapped
+  // would make those rows inherit a colour instead of the error state.
+  put('--dsw-alias-label-error', pair(parsed, mode => pick(parsed, mode, 'destructive')));
+
+  put('--dsw-alias-border-selected', pair(parsed, mode => pick(parsed, mode, 'ring', 'primary')));
+  put('--dsw-alias-chart-messages', pair(parsed, mode => pick(parsed, mode, 'chart-1', 'primary')));
+  put('--dsw-alias-chart-system',
+    pair(parsed, mode => pick(parsed, mode, 'chart-2', 'muted-foreground')));
+  put('--dsw-alias-chart-tools',
+    pair(parsed, mode => pick(parsed, mode, 'chart-3', 'chart-4', 'primary')));
+  put('--dsw-alias-trajectory-accent',
+    pair(parsed, mode => pick(parsed, mode, 'chart-2', 'ring', 'primary')));
+  put('--dsw-specific-file-upload-track',
+    pair(parsed, mode => tintOverlay(pick(parsed, mode, 'foreground'), 8)));
+
   // --- borders ----------------------------------------------------------
   if (settings.borders !== 'off') {
     const soften = settings.borders === 'soft';

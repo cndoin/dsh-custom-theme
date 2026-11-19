@@ -326,6 +326,29 @@ test('the Windows window-drag repair neutralises the full-window pet overlay', (
   assert.equal(buildBackdropCss(bd), '', 'drag repair is a separate stylesheet');
 });
 
+test('the wallpaper layer declares its own macOS window region', () => {
+  // DSH >= 0.2.2-rc.2, upgrade guide `window-drag-regions`: macOS Desktop stops
+  // granting a global no-drag exclusion to arbitrary content, so a custom overlay
+  // covering a header must declare its region. The wallpaper layer is mounted
+  // `position: fixed; inset: 0` across the whole window, so it must opt out.
+  const css = buildWindowDragCss();
+  // The layer and its children are excluded, scoped to macOS only.
+  assert.match(css, /\[data-platform="darwin"\] #dsh-custom-theme-backdrop/);
+  assert.match(css, /-webkit-app-region: no-drag/);
+  // The Windows repair must still be present and unconditional.
+  assert.match(css, /html\[data-windows-titlebar\]/);
+  assert.match(css, /-webkit-app-region: initial !important/);
+  // The rule must not paint anything or touch pointer behaviour: the layer is
+  // already non-interactive, and a stray `pointer-events` here would break the
+  // live GUI's hit-testing.
+  assert.ok(!css.includes('pointer-events'), 'region declaration changes no hit-testing');
+  assert.ok(!css.includes('z-index'), 'region declaration is not a layout change');
+  // `data-window-drag-exclude` is an HTML attribute, not a CSS property, and a
+  // stylesheet cannot set one — it must never appear as a declaration.
+  assert.ok(!/data-window-drag-exclude\s*:/.test(css),
+    'the exclusion attribute belongs on the element, not in a declaration block');
+});
+
 // ---------------------------------------------------------------------------
 // Pointer-driven liquid glass (Apple-style interaction)
 // ---------------------------------------------------------------------------

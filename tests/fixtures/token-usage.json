@@ -1,130 +1,198 @@
 [
   [
-    "--dsw-alias-label-tertiary",
-    296
+    "--dsw-alias-label-primary",
+    385
   ],
   [
-    "--dsw-alias-label-primary",
-    282
+    "--dsw-alias-label-tertiary",
+    385
   ],
   [
     "--dsw-alias-label-secondary",
-    234
+    358
   ],
   [
     "--dsw-alias-interactive-bg-hover",
-    167
+    231
   ],
   [
     "--dsw-alias-state-business-primary",
-    152
+    219
   ],
   [
     "--dsw-alias-state-error-primary",
-    119
-  ],
-  [
-    "--dsw-focus-ring-color",
-    86
-  ],
-  [
-    "--dsw-radius-sm",
-    85
-  ],
-  [
-    "--dsw-alias-label-caption",
-    81
+    150
   ],
   [
     "--dsw-alias-border-l2",
-    80
+    117
+  ],
+  [
+    "--dsw-radius-sm",
+    112
+  ],
+  [
+    "--dsh-content-font-delta",
+    107
+  ],
+  [
+    "--dsw-focus-ring-color",
+    106
   ],
   [
     "--dsw-radius-md",
-    78
+    100
   ],
   [
-    "--dsw-font-family",
-    69
+    "--dsw-alias-label-caption",
+    88
   ],
   [
     "--dsw-alias-border-l3",
-    55
+    85
   ],
   [
-    "--dsw-radius-lg",
-    54
+    "--dsw-font-family",
+    76
   ],
   [
     "--dsw-alias-border-l1",
-    51
+    71
+  ],
+  [
+    "--ds-font-family-code",
+    67
   ],
   [
     "--dsw-alias-bg-layer-1",
-    50
+    61
+  ],
+  [
+    "--dsh-content-font-size-secondary",
+    59
   ],
   [
     "--dsw-focus-ring-width",
-    38
+    58
+  ],
+  [
+    "--dsw-radius-lg",
+    57
+  ],
+  [
+    "--ds-ease-in-out",
+    47
+  ],
+  [
+    "--dsh-frame-overlay-top",
+    46
   ],
   [
     "--dsw-alias-border-l4",
-    38
+    45
   ],
   [
     "--dsw-alias-scrollbar-bg-l2",
-    35
+    43
   ],
   [
     "--dsw-alias-scrollbar-hover-l2",
-    35
-  ],
-  [
-    "--dsw-alias-bg-module-platform",
-    35
+    43
   ],
   [
     "--dsw-alias-bg-base",
+    42
+  ],
+  [
+    "--dsw-alias-bg-module-platform",
+    42
+  ],
+  [
+    "--dsw-alias-bg-layer-2",
+    40
+  ],
+  [
+    "--dsw-alias-state-success-primary",
+    37
+  ],
+  [
+    "--dsw-radius-xs",
     35
+  ],
+  [
+    "--dsw-font-xs-13",
+    30
+  ],
+  [
+    "--dsh-content-font-size",
+    26
   ],
   [
     "--dsw-radius-xl",
     25
   ],
   [
-    "--dsw-radius-xs",
+    "--dsw-font-xxs-12",
+    24
+  ],
+  [
+    "--dsh-composer-dock-inset",
     23
   ],
   [
-    "--dsw-font-xs-13",
+    "--dsw-alias-state-warn-primary",
     23
   ],
   [
-    "--dsw-alias-bg-layer-2",
+    "--dsh-content-font-delta-secondary",
     22
   ],
   [
-    "--dsw-alias-state-success-primary",
-    20
+    "--dsw-static-neutral-bluish-00",
+    21
   ],
   [
     "--dsw-elevation-prominent",
-    17
-  ],
-  [
-    "--dsw-font-xxs-12",
-    15
-  ],
-  [
-    "--dsw-static-neutral-bluish-00",
-    15
-  ],
-  [
-    "--dsw-specific-menu",
-    14
+    19
   ],
   [
     "--dsw-alias-state-warn-label",
+    18
+  ],
+  [
+    "--dsw-font-xxxs-11",
+    18
+  ],
+  [
+    "--dsh-composer-side-clearance",
+    17
+  ],
+  [
+    "--dsh-sidebar-paint-inset",
+    16
+  ],
+  [
+    "--dsw-alias-state-warn-tertiary",
+    16
+  ],
+  [
+    "--dsw-alias-brand-primary-new-colorprimary-new-color",
+    15
+  ],
+  [
+    "--dsw-alias-interactive-bg-active",
+    15
+  ],
+  [
+    "--dsw-alias-label-dimmed",
+    15
+  ],
+  [
+    "--dsh-chat-content-width",
+    14
+  ],
+  [
+    "--dsw-alias-bg-layer-3",
     14
   ],
   [
@@ -132,19 +200,23 @@
     14
   ],
   [
-    "--dsw-alias-brand-primary-new-colorprimary-new-color",
+    "--dsw-alias-markdown-code-block",
     14
   ],
   [
-    "--dsw-alias-state-warn-tertiary",
+    "--dsw-specific-menu",
+    14
+  ],
+  [
+    "--dsw-elevation-panel",
     13
   ],
   [
-    "--dsw-alias-markdown-code-block",
-    13
+    "--dsw-alias-brand-primary",
+    12
   ],
   [
-    "--dsw-static-neutral-00",
+    "--dsw-font-markdown-code-block-small",
     12
   ],
   [
@@ -152,11 +224,19 @@
     12
   ],
   [
-    "--dsw-alias-bg-layer-3",
+    "--dsw-static-neutral-bluish-850",
+    12
+  ],
+  [
+    "--ds-transition-duration-slow",
     11
   ],
   [
-    "--dsw-font-markdown-code-block-small",
+    "--dsw-alias-bg-skeleton",
+    11
+  ],
+  [
+    "--dsw-alias-label-primary-foreground",
     11
   ],
   [
@@ -164,7 +244,7 @@
     11
   ],
   [
-    "--dsw-alias-state-warn-primary",
+    "--dsh-sidebar-row-padding",
     10
   ],
   [
@@ -172,15 +252,15 @@
     10
   ],
   [
+    "--dsw-alias-interactive-bg-hover-solid",
+    10
+  ],
+  [
     "--dsw-menu-backdrop-filter",
     10
   ],
   [
-    "--dsw-alias-interactive-bg-active",
-    10
-  ],
-  [
-    "--dsw-static-neutral-bluish-750",
+    "--dsw-static-neutral-bluish-400",
     10
   ],
   [
@@ -188,19 +268,23 @@
     10
   ],
   [
-    "--dsw-static-neutral-bluish-850",
+    "--dsw-static-neutral-bluish-750",
     10
   ],
   [
-    "--dsw-elevation-panel",
+    "--dsw-alias-link",
     9
   ],
   [
-    "--dsw-alias-interactive-bg-hover-solid",
-    9
+    "--dsh-code-font-delta",
+    8
   ],
   [
-    "--dsw-specific-input-major",
+    "--dsh-composer-card-max-width",
+    8
+  ],
+  [
+    "--dsh-sidebar-label-gap",
     8
   ],
   [
@@ -208,27 +292,27 @@
     8
   ],
   [
-    "--dsw-alias-brand-primary",
+    "--dsw-specific-input-major",
     8
   ],
   [
-    "--dsw-alias-label-dimmed",
-    8
-  ],
-  [
-    "--dsw-alias-bg-skeleton",
-    8
-  ],
-  [
-    "--dsw-alias-label-primary-foreground",
-    8
-  ],
-  [
-    "--dsw-alias-link",
+    "--dsh-windows-titlebar-height",
     7
   ],
   [
-    "--dsw-static-neutral-bluish-400",
+    "--dsw-alias-button-floating-hover",
+    7
+  ],
+  [
+    "--dsw-alias-button-primary-fill",
+    7
+  ],
+  [
+    "--dsw-alias-card-fill",
+    7
+  ],
+  [
+    "--dsw-font",
     7
   ],
   [
@@ -236,11 +320,23 @@
     7
   ],
   [
+    "--dsw-static-deepseek-400",
+    7
+  ],
+  [
     "--dsw-static-neutral-bluish-100",
     7
   ],
   [
-    "--dsw-alias-settings-card-stroke",
+    "--dsh-frame-top-clearance",
+    6
+  ],
+  [
+    "--dsh-sidebar-inline-padding",
+    6
+  ],
+  [
+    "--dsh-warning-window-top",
     6
   ],
   [
@@ -248,19 +344,11 @@
     6
   ],
   [
+    "--dsw-alias-settings-card-stroke",
+    6
+  ],
+  [
     "--dsw-alias-state-business-tertiary",
-    6
-  ],
-  [
-    "--dsw-alias-button-primary-fill",
-    6
-  ],
-  [
-    "--dsw-static-neutral-bluish-700",
-    6
-  ],
-  [
-    "--dsw-static-neutral-bluish-1000",
     6
   ],
   [
@@ -268,15 +356,31 @@
     6
   ],
   [
-    "--dsw-static-neutral-50",
+    "--dsw-static-neutral-bluish-1000",
+    6
+  ],
+  [
+    "--dsw-static-neutral-bluish-700",
+    6
+  ],
+  [
+    "--dsh-code-font-size",
     5
   ],
   [
-    "--dsw-static-neutral-850",
+    "--dsh-scrollbar-width",
     5
   ],
   [
-    "--dsw-static-neutral-800",
+    "--dsw-alias-button-info-fill",
+    5
+  ],
+  [
+    "--dsw-alias-hovercard-label-tertiary",
+    5
+  ],
+  [
+    "--dsw-alias-label-primary-inverted",
     5
   ],
   [
@@ -284,11 +388,7 @@
     5
   ],
   [
-    "--dsw-font-xxxs-11",
-    5
-  ],
-  [
-    "--dsw-font",
+    "--dsw-font-xs-strong-13",
     5
   ],
   [
@@ -296,27 +396,43 @@
     5
   ],
   [
-    "--dsw-static-deepseek-400",
+    "--dsw-static-red-400",
     5
   ],
   [
-    "--dsw-alias-label-primary-inverted",
+    "--dsw-static-violet-400",
+    5
+  ],
+  [
+    "--dsh-composer-height",
     4
   ],
   [
-    "--dsw-font-xs-strong-13",
+    "--dsh-font-family-text-default",
     4
   ],
   [
-    "--dsw-alias-label-primary-dimmed",
+    "--dsh-tab-hit-inline",
     4
   ],
   [
-    "--dsw-radius-panel",
+    "--dsh-width-handle-pointer-y",
     4
   ],
   [
-    "--dsw-static-neutral-100",
+    "--dsw-alias-button-elevated-fill",
+    4
+  ],
+  [
+    "--dsw-alias-button-floating-fill",
+    4
+  ],
+  [
+    "--dsw-alias-card-fill-hover",
+    4
+  ],
+  [
+    "--dsw-alias-card-tile-fill",
     4
   ],
   [
@@ -324,11 +440,31 @@
     4
   ],
   [
+    "--dsw-alias-hovercard-label-secondary",
+    4
+  ],
+  [
+    "--dsw-alias-label-primary-dimmed",
+    4
+  ],
+  [
+    "--dsw-alias-state-done-primary",
+    4
+  ],
+  [
+    "--dsw-alias-state-error-secondary",
+    4
+  ],
+  [
     "--dsw-font-family-brand",
     4
   ],
   [
-    "--dsw-elevation-stroke",
+    "--dsw-font-markdown-code-block",
+    4
+  ],
+  [
+    "--dsw-radius-panel",
     4
   ],
   [
@@ -336,7 +472,11 @@
     4
   ],
   [
-    "--dsw-static-neutral-bluish-75",
+    "--dsw-static-neutral-00",
+    4
+  ],
+  [
+    "--dsw-static-neutral-bluish-300",
     4
   ],
   [
@@ -344,27 +484,31 @@
     4
   ],
   [
+    "--dsw-static-neutral-bluish-75",
+    4
+  ],
+  [
     "--dsw-static-neutral-bluish-900",
     4
   ],
   [
+    "--dsh-font-family-code-default",
+    3
+  ],
+  [
+    "--dsh-table-lead",
+    3
+  ],
+  [
+    "--dsh-trajectory-bottom-clearance",
+    3
+  ],
+  [
+    "--dsw-alias-bg-mask-1",
+    3
+  ],
+  [
     "--dsw-alias-button-contrast-fill",
-    3
-  ],
-  [
-    "--dsw-alias-button-floating-fill",
-    3
-  ],
-  [
-    "--dsw-alias-button-floating-hover",
-    3
-  ],
-  [
-    "--dsw-alias-scrollbar-bg-l1",
-    3
-  ],
-  [
-    "--dsw-alias-button-info-fill",
     3
   ],
   [
@@ -372,7 +516,15 @@
     3
   ],
   [
-    "--dsw-mask-blur",
+    "--dsw-alias-file-diff-added-bg",
+    3
+  ],
+  [
+    "--dsw-alias-file-diff-deleted-bg",
+    3
+  ],
+  [
+    "--dsw-alias-hovercard-label-primary",
     3
   ],
   [
@@ -384,11 +536,23 @@
     3
   ],
   [
-    "--dsw-static-neutral-200",
+    "--dsw-alias-scrollbar-bg-l1",
     3
   ],
   [
-    "--dsw-static-neutral-bluish-950",
+    "--dsw-alias-state-success-secondary",
+    3
+  ],
+  [
+    "--dsw-elevation-stroke",
+    3
+  ],
+  [
+    "--dsw-mask-blur",
+    3
+  ],
+  [
+    "--dsw-static-neutral-200",
     3
   ],
   [
@@ -396,27 +560,75 @@
     3
   ],
   [
-    "--dsw-static-red-400",
-    3
-  ],
-  [
     "--dsw-static-neutral-600",
     3
   ],
   [
-    "--dsw-alias-state-error-secondary",
+    "--dsw-static-neutral-bluish-950",
     3
   ],
   [
-    "--dsw-alias-label-quaternary",
+    "--dsh-assistant-block-gap",
     2
   ],
   [
-    "--dsw-alias-state-warn-secondary",
+    "--dsh-chat-flow-gap",
     2
   ],
   [
-    "--dsw-alias-fill-tertiary",
+    "--dsh-compaction-header-height",
+    2
+  ],
+  [
+    "--dsh-composer-stack-gap",
+    2
+  ],
+  [
+    "--dsh-composer-text-max-height",
+    2
+  ],
+  [
+    "--dsh-frame-chrome-top",
+    2
+  ],
+  [
+    "--dsh-model-anchor",
+    2
+  ],
+  [
+    "--dsh-scrollbar-thumb",
+    2
+  ],
+  [
+    "--dsh-sidebar-width",
+    2
+  ],
+  [
+    "--dsh-subagent-menu-width",
+    2
+  ],
+  [
+    "--dsh-table-spare",
+    2
+  ],
+  [
+    "--dsh-trajectory-toolbar-height",
+    2
+  ],
+  [
+    "--dsh-windows-content-radius",
+    2
+  ],
+  [
+    "--dsh-workspace-indent",
+    2
+  ],
+  [
+    "--dsw-alias-bg-document-preview",
+    2
+  ],
+  [
+    "--dsw-alias-bg-l2",
     2
   ],
   [
@@ -424,19 +636,7 @@
     2
   ],
   [
-    "--dsw-font-markdown-code-block",
-    2
-  ],
-  [
-    "--dsw-alias-fill-l2",
-    2
-  ],
-  [
-    "--dsw-alias-bg-mask-1",
-    2
-  ],
-  [
-    "--dsw-alias-state-success-secondary",
+    "--dsw-alias-border-selected",
     2
   ],
   [
@@ -444,15 +644,43 @@
     2
   ],
   [
-    "--dsw-alias-illustration-background",
-    2
-  ],
-  [
     "--dsw-alias-button-primary-hover",
     2
   ],
   [
-    "--dsw-alias-onboarding-secondary-fill",
+    "--dsw-alias-file-diff-added-gutter",
+    2
+  ],
+  [
+    "--dsw-alias-file-diff-added-marker",
+    2
+  ],
+  [
+    "--dsw-alias-file-diff-deleted-gutter",
+    2
+  ],
+  [
+    "--dsw-alias-file-diff-deleted-marker",
+    2
+  ],
+  [
+    "--dsw-alias-fill-l2",
+    2
+  ],
+  [
+    "--dsw-alias-hovercard-state-error",
+    2
+  ],
+  [
+    "--dsw-alias-illustration-background",
+    2
+  ],
+  [
+    "--dsw-alias-label-on-color",
+    2
+  ],
+  [
+    "--dsw-alias-label-quaternary",
     2
   ],
   [
@@ -460,19 +688,63 @@
     2
   ],
   [
-    "--dsw-static-neutral-700",
+    "--dsw-alias-onboarding-secondary-fill",
     2
   ],
   [
-    "--dsw-alias-button-elevated-fill",
+    "--dsw-alias-state-success-tertiary",
     2
   ],
   [
-    "--dsw-static-neutral-bluish-150",
+    "--dsw-alias-state-warn-secondary",
     2
   ],
   [
-    "--dsw-static-neutral-bluish-310",
+    "--dsw-alias-tooltip-bg",
+    2
+  ],
+  [
+    "--dsw-alias-trajectory-accent",
+    2
+  ],
+  [
+    "--dsw-elevation-soft",
+    2
+  ],
+  [
+    "--dsw-menu-surface-fill",
+    2
+  ],
+  [
+    "--dsw-specific-file-upload-track",
+    2
+  ],
+  [
+    "--dsw-specific-selector",
+    2
+  ],
+  [
+    "--dsw-specific-sidebar-glass-fill",
+    2
+  ],
+  [
+    "--dsw-specific-sidebar-glass-hover",
+    2
+  ],
+  [
+    "--dsw-static-amber-400",
+    2
+  ],
+  [
+    "--dsw-static-amber-500",
+    2
+  ],
+  [
+    "--dsw-static-amber-600",
+    2
+  ],
+  [
+    "--dsw-static-blue-450",
     2
   ],
   [
@@ -484,7 +756,7 @@
     2
   ],
   [
-    "--dsw-static-green-500",
+    "--dsw-static-deepseek-450",
     2
   ],
   [
@@ -492,43 +764,119 @@
     2
   ],
   [
-    "--dsw-static-amber-600",
+    "--dsw-static-green-500",
     2
   ],
   [
-    "--dsw-static-amber-500",
+    "--dsw-static-neutral-50",
     2
   ],
   [
-    "--dsw-static-amber-400",
+    "--dsw-static-neutral-700",
     2
   ],
   [
-    "--dsw-alias-tooltip-bg",
+    "--dsw-static-neutral-800",
     2
   ],
   [
-    "--dsw-menu-surface-fill",
+    "--dsw-static-neutral-850",
     2
   ],
   [
-    "--dsw-static-neutral-bluish-300",
+    "--dsw-static-neutral-bluish-150",
     2
   ],
   [
-    "--dsw-static-deepseek-450",
+    "--dsw-static-neutral-bluish-310",
     2
   ],
   [
-    "--dsw-alias-state-success-tertiary",
-    2
-  ],
-  [
-    "--dsw-alias-fill-tsp-secondary",
+    "--ds-transition-duration",
     1
   ],
   [
-    "--dsw-shadow-lv2",
+    "--ds-transition-duration-fast",
+    1
+  ],
+  [
+    "--dsh-answer-field-padding",
+    1
+  ],
+  [
+    "--dsh-chat-user-width",
+    1
+  ],
+  [
+    "--dsh-composer-hint",
+    1
+  ],
+  [
+    "--dsh-composer-model-icon-display",
+    1
+  ],
+  [
+    "--dsh-composer-model-text-display",
+    1
+  ],
+  [
+    "--dsh-conversation-column-width",
+    1
+  ],
+  [
+    "--dsh-conversation-viewport-height",
+    1
+  ],
+  [
+    "--dsh-font-family-code",
+    1
+  ],
+  [
+    "--dsh-font-family-text",
+    1
+  ],
+  [
+    "--dsh-font-mono",
+    1
+  ],
+  [
+    "--dsh-frame-leading-clearance",
+    1
+  ],
+  [
+    "--dsh-onboarding-border-angle",
+    1
+  ],
+  [
+    "--dsh-scrollbar-thumb-border",
+    1
+  ],
+  [
+    "--dsh-scrollbar-thumb-hover",
+    1
+  ],
+  [
+    "--dsh-scrollbar-track-margin",
+    1
+  ],
+  [
+    "--dsh-windows-sidebar-width",
+    1
+  ],
+  [
+    "--dsw-alias-bg-document-selection",
+    1
+  ],
+  [
+    "--dsw-alias-bg-elevated",
+    1
+  ],
+  [
+    "--dsw-alias-bg-l1",
+    1
+  ],
+  [
+    "--dsw-alias-bg-layer-4",
     1
   ],
   [
@@ -536,11 +884,47 @@
     1
   ],
   [
-    "--dsw-font-l-20",
+    "--dsw-alias-bg-overlay",
     1
   ],
   [
-    "--dsw-font-s-14",
+    "--dsw-alias-button-info-hover",
+    1
+  ],
+  [
+    "--dsw-alias-chart-messages",
+    1
+  ],
+  [
+    "--dsw-alias-chart-system",
+    1
+  ],
+  [
+    "--dsw-alias-chart-tools",
+    1
+  ],
+  [
+    "--dsw-alias-fill-tsp-secondary",
+    1
+  ],
+  [
+    "--dsw-alias-hovercard-state-done",
+    1
+  ],
+  [
+    "--dsw-alias-illustration-inset",
+    1
+  ],
+  [
+    "--dsw-alias-illustration-shadow",
+    1
+  ],
+  [
+    "--dsw-alias-interactive-bg-hover-accent",
+    1
+  ],
+  [
+    "--dsw-alias-label-deep-diving",
     1
   ],
   [
@@ -548,7 +932,35 @@
     1
   ],
   [
-    "--dsw-alias-label-deep-diving",
+    "--dsw-alias-label-document-preview",
+    1
+  ],
+  [
+    "--dsw-alias-label-primary-bluish",
+    1
+  ],
+  [
+    "--dsw-alias-markdown-citation",
+    1
+  ],
+  [
+    "--dsw-alias-markdown-code-block-banner",
+    1
+  ],
+  [
+    "--dsw-alias-onboarding-card-fill",
+    1
+  ],
+  [
+    "--dsw-alias-onboarding-checkbox-border",
+    1
+  ],
+  [
+    "--dsw-alias-scrollbar-hover-l1",
+    1
+  ],
+  [
+    "--dsw-alias-separator-primary",
     1
   ],
   [
@@ -560,99 +972,15 @@
     1
   ],
   [
-    "--dsw-alias-separator-primary",
+    "--dsw-corner-shape",
     1
   ],
   [
-    "--dsw-alias-label-primary-bluish",
+    "--dsw-elevation-stroke-color",
     1
   ],
   [
-    "--dsw-static-blue-450",
-    1
-  ],
-  [
-    "--dsw-elevation-soft",
-    1
-  ],
-  [
-    "--dsw-specific-selector",
-    1
-  ],
-  [
-    "--dsw-alias-button-info-hover",
-    1
-  ],
-  [
-    "--dsw-alias-file-diff-added-gutter",
-    1
-  ],
-  [
-    "--dsw-alias-file-diff-added-marker",
-    1
-  ],
-  [
-    "--dsw-alias-file-diff-added-bg",
-    1
-  ],
-  [
-    "--dsw-alias-file-diff-deleted-gutter",
-    1
-  ],
-  [
-    "--dsw-alias-file-diff-deleted-marker",
-    1
-  ],
-  [
-    "--dsw-alias-file-diff-deleted-bg",
-    1
-  ],
-  [
-    "--dsw-specific-bubble",
-    1
-  ],
-  [
-    "--dsw-alias-illustration-shadow",
-    1
-  ],
-  [
-    "--dsw-alias-illustration-inset",
-    1
-  ],
-  [
-    "--dsw-gradient-onboarding-blue-stops",
-    1
-  ],
-  [
-    "--dsw-alias-onboarding-card-fill",
-    1
-  ],
-  [
-    "--dsw-gradient-onboarding-violet-stops",
-    1
-  ],
-  [
-    "--dsw-gradient-onboarding-cyan-stops",
-    1
-  ],
-  [
-    "--dsw-alias-onboarding-checkbox-border",
-    1
-  ],
-  [
-    "--dsw-specific-sidebar-nav-item-active",
-    1
-  ],
-  [
-    "--dsw-alias-bg-layer-4",
-    1
-  ],
-  [
-    "--dsw-alias-bg-document-preview",
-    1
-  ],
-  [
-    "--dsw-alias-interactive-bg-hover-accent",
+    "--dsw-font-l-20",
     1
   ],
   [
@@ -660,63 +988,91 @@
     1
   ],
   [
-    "--dsw-alias-bg-l1",
+    "--dsw-font-s-14",
     1
   ],
   [
-    "--dsw-alias-markdown-code-block-banner",
+    "--dsw-gradient-onboarding-blue-stops",
     1
   ],
   [
-    "--dsw-corner-shape",
+    "--dsw-gradient-onboarding-cyan-stops",
     1
   ],
   [
-    "--dsw-static-neutral-bluish-500",
+    "--dsw-gradient-onboarding-violet-stops",
     1
   ],
   [
-    "--dsw-static-neutral-bluish-55",
+    "--dsw-shadow-lv2",
     1
   ],
   [
-    "--dsw-static-neutral-bluish-90",
+    "--dsw-specific-bubble",
     1
   ],
   [
-    "--dsw-static-neutral-bluish-200",
+    "--dsw-specific-bubble-highlight",
     1
   ],
   [
-    "--dsw-static-blue-900",
+    "--dsw-specific-guide-hero",
     1
   ],
   [
-    "--dsw-static-neutral-1000",
+    "--dsw-specific-sidebar-glass-collapsed-fill",
     1
   ],
   [
-    "--dsw-static-green-500-a08",
+    "--dsw-specific-sidebar-glass-collapsed-hover",
     1
   ],
   [
-    "--dsw-static-red-600-a08",
+    "--dsw-specific-sidebar-nav-item-active",
     1
   ],
   [
-    "--dsw-static-violet-600",
+    "--dsw-specific-sidebar-nav-item-active-accent",
     1
   ],
   [
-    "--dsw-static-red-600",
+    "--dsw-specific-sidebar-right-flash",
     1
   ],
   [
-    "--dsw-static-green-100",
+    "--dsw-specific-sidebar-tint",
+    1
+  ],
+  [
+    "--dsw-specific-sidebar-wash-bottom",
+    1
+  ],
+  [
+    "--dsw-specific-sidebar-wash-bottom-clear",
+    1
+  ],
+  [
+    "--dsw-specific-sidebar-wash-top",
+    1
+  ],
+  [
+    "--dsw-specific-sidebar-wash-top-clear",
     1
   ],
   [
     "--dsw-static-amber-100",
+    1
+  ],
+  [
+    "--dsw-static-amber-900",
+    1
+  ],
+  [
+    "--dsw-static-blue-300",
+    1
+  ],
+  [
+    "--dsw-static-blue-900",
     1
   ],
   [
@@ -728,19 +1084,15 @@
     1
   ],
   [
-    "--dsw-static-neutral-bluish-875",
-    1
-  ],
-  [
-    "--dsw-static-blue-300",
-    1
-  ],
-  [
-    "--dsw-static-neutral-550",
-    1
-  ],
-  [
     "--dsw-static-deepseek-800",
+    1
+  ],
+  [
+    "--dsw-static-green-100",
+    1
+  ],
+  [
+    "--dsw-static-green-500-a08",
     1
   ],
   [
@@ -748,39 +1100,55 @@
     1
   ],
   [
-    "--dsw-static-red-400-a12",
-    1
-  ],
-  [
-    "--dsw-static-violet-400",
-    1
-  ],
-  [
     "--dsw-static-green-900",
     1
   ],
   [
-    "--dsw-static-amber-900",
+    "--dsw-static-neutral-100",
     1
   ],
   [
-    "--dsw-alias-scrollbar-hover-l1",
+    "--dsw-static-neutral-1000",
     1
   ],
   [
-    "--dsw-elevation-stroke-color",
+    "--dsw-static-neutral-550",
     1
   ],
   [
-    "--dsw-alias-markdown-citation",
+    "--dsw-static-neutral-bluish-200",
     1
   ],
   [
-    "--dsw-alias-bg-overlay",
+    "--dsw-static-neutral-bluish-500",
     1
   ],
   [
-    "--dsw-specific-sidebar-nav-item-active-accent",
+    "--dsw-static-neutral-bluish-55",
+    1
+  ],
+  [
+    "--dsw-static-neutral-bluish-875",
+    1
+  ],
+  [
+    "--dsw-static-neutral-bluish-90",
+    1
+  ],
+  [
+    "--dsw-static-red-400-a12",
+    1
+  ],
+  [
+    "--dsw-static-red-600",
+    1
+  ],
+  [
+    "--dsw-static-red-600-a08",
+    1
+  ],
+  [
+    "--dsw-static-violet-600",
     1
   ]
 ]

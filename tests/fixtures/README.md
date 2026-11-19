@@ -11,6 +11,14 @@ re-serialized in tweakcn's own variable order. Nothing is hand-invented.
 > plain `git clone` run `npm test` offline with no research checkout, while keeping
 > third-party source code out of this MIT-licensed repository. Regenerate them only
 > when bumping the DSH or tweakcn version under test.
+>
+> The three DSH snapshots were last generated from **0.2.2-rc.5** (2026-11-19):
+> 619 declaration lines / 477 unique names / 288 usage rows. `dsh-token-defs.txt`
+> keeps one line per distinct `--name:value` pair, so a light and a dark declaration
+> of the same property appear as two lines on purpose. `dsh-token-names.json` holds
+> the names without the leading `--`. `token-usage.json` counts `var(--name)` reads in
+> the built `lib/` bundles only — the shipped `src/` CSS repeats the same rules and
+> would double-count.
 
 The `*.css` fixtures are the primary inputs. The JSON/TXT snapshots are consumed by
 `tests/core.test.mjs` and `scripts/preset-sweep.mjs`.

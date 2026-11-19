@@ -526,6 +526,25 @@ test('every emitted token name exists in the DSH token sheet', async () => {
   const known = new Set([...bundle.matchAll(/--([a-z0-9-]+)\s*:/g)].map(m => m[1]));
   assert.ok(known.size > 300, `expected the full token sheet, saw ${known.size}`);
 
+  // Tokens that shipped components READ but DSH itself never DECLARES. They are
+  // mapped on purpose: an undeclared custom property inherits, so without an
+  // override the consumer silently paints with whatever colour it inherited.
+  // Measured against 0.2.2-rc.5 — 10 such names exist, of which this plugin
+  // supplies the ones a theme can meaningfully colour. Re-check this list when
+  // bumping the DSH version: if DSH starts declaring one, delete it here.
+  const declaredNowhereInRc5 = new Set([
+    'dsw-alias-label-error',        // failed-job rows in dsh-web-frontend
+    'dsw-alias-fill-l1',            // jobs list hover
+    'dsw-alias-fill-l2',            // jobs list live rows
+    'dsw-alias-bg-l1',              // sidebar-terminal notice/title
+    'dsw-alias-bg-l2',              // sidebar-terminal status/error
+    'dsw-alias-bg-layer-4',         // help button + subagent model hover
+    'dsw-alias-label-quaternary',   // disabled seats/tools
+    'dsw-alias-separator-primary',  // stats pill separator
+    'dsw-alias-bg-elevated',        // tooltip-ish plates
+    'dsw-alias-fill-tsp-secondary', // agent-preset label
+  ]);
+
   const emitted = new Set();
   for (const name of ['claude.oklch.css', 'amethyst-haze.oklch.css', 't3-chat.oklch.css',
     'legacy-v3-hsl-triplets.css', 'legacy-v3-hex-with-theme-inline.css']) {
@@ -535,8 +554,29 @@ test('every emitted token name exists in the DSH token sheet', async () => {
     }
   }
 
-  const unknown = [...emitted].filter(name => !known.has(name));
+  const unknown = [...emitted]
+    .filter(name => !known.has(name))
+    .filter(name => !declaredNowhereInRc5.has(name));
   assert.deepEqual(unknown, [], 'tokens not present in the shipped stylesheet');
+});
+
+test('the undeclared-token allowlist stays honest against the shipped sheet', async () => {
+  // Guard against the allowlist rotting: anything listed as "DSH never declares
+  // this" must really be absent from the sheet, and anything we still emit from
+  // that list must really be emitted. If DSH declares one, the first assertion
+  // fails and the entry must be removed.
+  const bundle = await read(join('tests', 'fixtures', 'dsh-token-defs.txt'));
+  const declared = new Set([...bundle.matchAll(/--([a-z0-9-]+)\s*:/g)].map(m => m[1]));
+
+  const currentlyUndeclared = [
+    'dsw-alias-label-error', 'dsw-alias-fill-l1', 'dsw-alias-fill-l2',
+    'dsw-alias-bg-l1', 'dsw-alias-bg-l2', 'dsw-alias-bg-layer-4',
+    'dsw-alias-label-quaternary', 'dsw-alias-separator-primary',
+    'dsw-alias-bg-elevated', 'dsw-alias-fill-tsp-secondary',
+  ];
+  const nowDeclared = currentlyUndeclared.filter(name => declared.has(name));
+  assert.deepEqual(nowDeclared, [],
+    'DSH started declaring these; remove them from the allowlist and map them normally');
 });
 
 test('borders can be softened, solid, or left alone', async () => {
@@ -911,6 +951,57 @@ test('a component token that only forwards to a covered alias needs no direct ma
   assert.ok(tokens['--dsw-alias-border-l4'], 'the alias it forwards to is mapped');
 });
 
+test('the surfaces DSH 0.2.2-rc.5 added are mapped', async () => {
+  // These 17 tokens first appear in the rc.5 theme sheet. Two groups:
+  //  - tokens DSH declares (card plates, hover cards, charts, border-selected…),
+  //    which the sheet itself resolves to ramp stops, so a theme must supply them
+  //    or those panels stay stock;
+  //  - tokens components read but DSH never declares (`label-error`), where the
+  //    value would otherwise be inherited.
+  const parsed = parseThemeCss(await fixture('amethyst-haze.oklch.css'));
+  const { tokens } = buildOverrides(parsed, {});
+
+  const addedInRc5 = [
+    '--dsw-alias-card-fill',
+    '--dsw-alias-card-fill-hover',
+    '--dsw-alias-card-tile-fill',
+    '--dsw-alias-hovercard-bg',
+    '--dsw-alias-hovercard-label-primary',
+    '--dsw-alias-hovercard-label-secondary',
+    '--dsw-alias-hovercard-label-tertiary',
+    '--dsw-alias-hovercard-state-done',
+    '--dsw-alias-hovercard-state-error',
+    '--dsw-alias-label-on-color',
+    '--dsw-alias-label-error',
+    '--dsw-alias-border-selected',
+    '--dsw-alias-chart-messages',
+    '--dsw-alias-chart-system',
+    '--dsw-alias-chart-tools',
+    '--dsw-alias-trajectory-accent',
+    '--dsw-specific-file-upload-track',
+  ];
+  for (const token of addedInRc5) {
+    const modes = tokens[token];
+    assert.ok(modes, `${token} is mapped`);
+    assert.equal(typeof modes.light, 'string', `${token} has a light value`);
+    assert.equal(typeof modes.dark, 'string', `${token} has a dark value`);
+    // A pair must actually differ between schemes, or switching light/dark would
+    // be a no-op on that surface.
+    assert.ok(!/NaN|undefined/.test(modes.light + modes.dark), `${token} is a real CSS value`);
+  }
+
+  // Guard the semantic choices that are easy to get wrong:
+  // the selected border must track the accent (`ring`), not the neutral border.
+  assert.equal(tokens['--dsw-alias-border-selected'].light, parsed.light.ring,
+    'border-selected follows the theme ring');
+  // Text on a saturated plate must be the on-primary ink, never the page colour.
+  assert.equal(tokens['--dsw-alias-label-on-color'].light, parsed.light['primary-foreground'],
+    'label-on-color is the on-primary ink');
+  // The hover card is an inverted plate in BOTH schemes, like tooltips.
+  assert.equal(tokens['--dsw-alias-hovercard-label-primary'].light, parsed.light.background,
+    'hover-card primary label is the page colour (inverted plate)');
+});
+
 test('the static ramps components bypass the alias layer with are rebuilt', async () => {
   // `deliverables`, `plan`, `schedule`, `sidebar-files` and `sidebar-right` paint
   // with `--dsw-static-neutral-*` directly. Without these, those panels keep the
@@ -1038,10 +1129,15 @@ test('the inlined core in client.js matches src/core.js behaviour', async () => 
   });
   assert.equal(typeof factory, 'function', 'factory captured');
 
+  const elementCalls = [];
   const provided = factory((id) => {
     if (id === 'react') {
       return {
-        createElement: () => null, useState: () => [undefined, () => {}],
+        createElement: (type, props, children) => {
+          elementCalls.push({ type, props, children });
+          return null;
+        },
+        useState: () => [undefined, () => {}],
         useEffect: () => {}, useMemo: () => [], useRef: () => ({ current: undefined }),
         useCallback: (fn) => fn,
       };
@@ -1056,6 +1152,7 @@ test('the inlined core in client.js matches src/core.js behaviour', async () => 
   const layers = [];
   const effects = [];
   const registered = [];
+  const registrations = [];
   const themeService = { overrideTokens: (sourceId, tokens) => { layers.push({ sourceId, tokens }); return () => {}; } };
   const ctx = {
     effect: (callback) => { effects.push(callback); return () => {}; },
@@ -1072,7 +1169,10 @@ test('the inlined core in client.js matches src/core.js behaviour', async () => 
         assert.ok(disposers.length > 0 && disposers.every(d => typeof d === 'function'));
         return () => {};
       },
-      register: () => () => {},
+      register: (options, component) => {
+        registrations.push({ options, component });
+        return () => {};
+      },
     },
   };
   provided.apply(ctx);
@@ -1083,6 +1183,25 @@ test('the inlined core in client.js matches src/core.js behaviour', async () => 
   }
   assert.ok(registered.includes('settings.section'), 'registers a settings page');
   assert.ok(!registered.includes('shell.overlay'), 'the tail caret is pure CSS — no slot component');
+  // DSH 0.2.2-rc.5 renders `settings.section.icon` beside each section label and
+  // falls back to a generic gear when an entry is missing, so the plugin must
+  // supply one — and key it by the same id and order as the section itself.
+  const iconReg = registrations.find(r => r.options?.name === 'settings.section.icon');
+  const sectionReg = registrations.find(r => r.options?.name === 'settings.section');
+  assert.ok(iconReg, 'registers a settings.section.icon entry');
+  assert.equal(iconReg.options.id, sectionReg.options.id, 'icon is keyed by the section id');
+  assert.equal(iconReg.options.order, sectionReg.options.order, 'icon sorts with its section');
+  // The component is rendered with `{ size, active }` and must not throw. This
+  // test's React stub returns `null` from createElement, so assert on what the
+  // component ASKED for by inspecting the recorded element calls.
+  const before = elementCalls.length;
+  assert.doesNotThrow(() => iconReg.component({ size: 16, active: true }),
+    'the icon renders without throwing');
+  const svgCall = elementCalls.slice(before).find(c => c.type === 'svg');
+  assert.ok(svgCall, 'the icon element is an <svg>');
+  assert.equal(svgCall.props.width, 16, 'the icon honours the size the slot passes');
+  assert.equal(svgCall.props.height, 16, 'the icon is square');
+  assert.equal(svgCall.props['aria-hidden'], 'true', 'the label already names the section');
   // Two stylesheets: the settings-page CSS and the Windows window-drag repair.
   assert.equal(head.length, 2, 'injects the section and window-drag stylesheets');
   assert.ok(head.some(tag => String(tag.dataset.pluginCss).includes('window-drag')),

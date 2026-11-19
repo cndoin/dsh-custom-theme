@@ -5,8 +5,11 @@
 
 ## Ground rules
 
-1. Never target the **`desktop`** profile. It is owned by the Electron application and
-   refuses CLI installs. Use `web` (or another CLI-managed profile).
+1. Never run `dsh plugin --profile desktop …`: the **`desktop`** profile is owned by the
+   Electron application, and the `dsh` CLI refuses to write it. That is a limit of the CLI,
+   not of the plugin — the app's own plugin manager **can** install `dsh-custom-theme` into
+   `desktop` (that is how it is normally installed on a Desktop-only machine). Use `web` (or
+   another CLI-managed profile) for every CLI command in this document.
 2. Never hand-edit `dsh.profile.bundles` in a profile's `package.json`. Use
    `dsh plugin --profile <p> add/install/remove`.
 3. Never touch `$DSH_HOME/sessions` or any session file. This plugin does not read them.
@@ -51,7 +54,7 @@ live (`stylesheetPresent`, `tokenCount`, `layerPresent`).
 | Symptom | Cause | Fix |
 | --- | --- | --- |
 | `declares no dsh.bundle` | pnpm did not create a root link for the `link:` dependency | Create the junction/symlink manually and declare `"dsh-custom-theme": "link:<abs path>"` under `dependencies`, then re-run `dsh plugin --profile web install` |
-| `desktop` profile rejects the install | Electron owns that profile | Use `web`, or install through the app's plugin manager instead |
+| `desktop` profile rejects the install | The `dsh` CLI is not allowed to write the Electron-owned profile | Use `web`, or install through the app's plugin manager |
 | Settings section missing after install | Host half mounts only at process start | Restart `dsh web` / Harness, then reload the page (`Ctrl+R`) |
 | Theme applied but colours unchanged | Paste contained no readable custom-property declarations | Check the **Run status** `warnings`; confirm the paste includes `:root { --…: …; }` |
 | Wallpaper selected but not visible | URL rejected, or no theme applied so no shell token was overridden | Check `sourceError` in **Run status**; an https URL or a local image is required |

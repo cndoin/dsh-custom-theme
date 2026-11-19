@@ -18,7 +18,7 @@ Apple-style liquid-glass composer with a pointer-following specular highlight.
 | | |
 | --- | --- |
 | **Two palettes from one paste** | `:root { … }` → light, `:root.dark { … }` → dark. A single-palette theme gains a legible companion automatically. |
-| **Whole-UI coverage** | 140–156 design tokens: alias layer, specific surfaces, focus rings, radii, fonts, and 38 static colour ramps. Light and dark are delivered separately. |
+| **Whole-UI coverage** | 155–171 design tokens per theme: alias layer, specific surfaces, focus rings, radii, fonts, and 38 static colour ramps. Light and dark are delivered separately. |
 | **Paste-safety** | Only CSS custom-property *declarations* are read. Pasted content is never inserted as a stylesheet. `url()`, `@import`, `expression()`, `javascript:`, braces and semicolons are rejected. |
 | **Custom wallpaper** | Image or video, `blur` / `dim` / `tint` sliders, optional local file (downscaled to 1920 px and re-encoded as JPEG before storage). |
 | **Liquid glass** | Frosted composer with a white specular highlight that follows the pointer. The element itself never scales or transforms. |
@@ -46,17 +46,22 @@ most likely cause of janky output in small text areas and has been removed.
 ### Requirements
 
 - DeepSeek Harness with a CLI-managed profile (`web` by default). The **desktop** profile is
-  owned by the Electron app and refuses CLI installs — see the note below.
+  owned by the Electron app: the `dsh` CLI refuses to write it, so install there through the
+  app's own plugin manager instead — see the note below.
 - Node.js ≥ 22 for development / rebuilding `client.js`. **Running the plugin needs no
   build step**: the generated `client.js` is committed.
-- **Compatibility (verified 2026-11-11):** the installed build and the nightly feed are
-  both **DSH 0.2.2-rc.1** — the same version this plugin was written against. The apparent
-  2026-11-09 "update" was a same-version re-download that failed with
-  `MoveFileExW / Windows error 32`, replacing nothing. Every runtime contract was checked
-  inside the current `app.asar` (the `__ModuleLoader__` closure factory,
-  `ctx.theme.overrideTokens`, `ctx.locale`, `ctx.slots.inject('settings.section')`, the
-  three injected client packages, and the stable `data-*` selectors) and is unchanged —
-  **no compatibility changes are required.**
+- **Compatibility (verified 2026-11-19 against the installed build and the `nightly` feed):
+  DSH 0.2.2-rc.5.** Every runtime contract was re-checked inside the current `app.asar`: the
+  `__ModuleLoader__.load({ id, factory })` closure factory, `ctx.theme.overrideTokens` (still
+  requires a `{ light, dark }` pair), `ctx.locale.register` / `bind`,
+  `ctx.slots.inject('settings.section')` (still declared by the `sidebar.settings` factory as
+  `{ kind: 'list', scope: 'root' }`, with a function `label` and `order` sort), the generator
+  form of `ctx.effect` that `slots.inject` relies on, and the stable
+  `body[data-ds-dark-theme]` / `html[data-windows-titlebar]` / `[data-composer-card]` /
+  `[data-window-drag]` selectors.
+  Two things did change, and this release follows them: **50 tokens were added** to the theme
+  sheet (17 now mapped here) and macOS Desktop stopped granting a **global window-drag
+  exclusion** to arbitrary content (see the `window-drag-regions` note below).
 
 ### Three commands
 
@@ -145,7 +150,7 @@ The parser is exercised against a matrix of real generator outputs, not just the
 | Markdown fences, surrounding prose, BOM, CRLF | stripped before parsing |
 | Single-palette community exports | companion dark/light scheme derived from luminance |
 
-`npm test` runs 97 unit tests plus six compatibility scripts:
+`npm test` runs 108 unit tests plus six compatibility scripts:
 
 ```
 ALL FORMATS PASS                 0 case(s) need attention
@@ -212,7 +217,7 @@ strip is what makes the top bar draggable and gives double-click maximize/restor
 Enabling a wallpaper makes that token translucent so the image shows through, which also
 makes the caption strip transparent. On an acrylic / transparent Electron window the hit
 test then stops treating the strip as part of the window: **dragging the top bar and
-double-clicking to maximize both stop working** (observed on DSH 0.2.2-rc.1, Windows).
+double-clicking to maximize both stop working** (observed on Windows, DSH 0.2.2-rc.5).
 
 The fix repaints **only** that pseudo-element with the theme's original opaque colour
 (`html[data-windows-titlebar] [class*="frame"]:before`), using a stable attribute + class
@@ -220,6 +225,20 @@ substring so a hashed-class rename does not break it. Every other surface keeps 
 translucent wallpaper look, and the rule is emitted only while a wallpaper is actually
 enabled — so the zero-CSS-by-default guarantee is untouched. Regression test:
 `tests/backdrop.test.mjs`.
+
+### Explicit window regions (macOS)
+
+DSH 0.2.2-rc.2 changed how macOS Desktop computes the window drag region (upgrade guide
+`window-drag-regions`): it no longer grants a global `no-drag` exclusion to controls and
+ARIA roles anywhere in the page. Only controls inside a `data-window-drag` row or a
+`data-window-drag-controls` scope get one automatically, so **a custom overlay that covers a
+header must now declare its own region**.
+
+The wallpaper layer is exactly such an overlay: it is mounted `position: fixed; inset: 0`
+across the whole window. The client half therefore sets `data-window-drag-exclude` on that
+element and the stylesheet keeps its children out of any inherited drag region. The layer is
+already `pointer-events: none`, so this affects only the region computation and never click
+behaviour. scoped to `[data-platform="darwin"]`; Windows and plain Web are untouched.
 
 ---
 
@@ -235,7 +254,7 @@ scripts/build.mjs       Concatenates the above into client.js (no bundler, no de
 client.js               Generated browser half — committed, no build step at install time.
 index.js                Host half: a no-op entry (state lives in the browser).
 cordis.patch.yml        Inserts only this plugin's own entry.
-tests/                  97 unit tests, including a VM end-to-end DOM injection check.
+tests/                  108 unit tests, including a VM end-to-end DOM injection check.
 tests/fixtures/         Self-contained fact snapshots: 8 theme exports, the 42
                         tweakcn presets, the DSH token-name / declaration sheets.
 scripts/                Compatibility / adversarial / generator-parity probes.
@@ -262,7 +281,7 @@ dependency injection (`inject: ['slots', 'locale', 'theme']`).
 
 ```bash
 node scripts/build.mjs     # regenerate client.js
-npm test                   # 97 unit tests + 6 compatibility scripts
+npm test                   # 108 unit tests + 6 compatibility scripts
 npm run check              # build + node --check + full test
 ```
 

@@ -357,29 +357,42 @@ body[${BACKDROP_ATTR}="on"] { background-color: transparent !important; }
 }
 
 /**
- * Windows window-drag repair. Independent of the wallpaper and glass switches:
- * it must apply whenever this plugin is loaded, because the breakage comes from
- * a third-party overlay that covers the whole window.
+ * Window-drag repair, for the hosts where a full-window overlay would otherwise
+ * cancel DSH's own draggable regions.
  *
- * Electron derives the draggable region as
- *   (every `-webkit-app-region: drag` rectangle)
- *   MINUS (every `-webkit-app-region: no-drag` rectangle)
- * and the subtraction ignores `pointer-events`. The dsh-pet "吃白饭" mini-game
- * mounts `#dsh-pet-baifan-root` as `position:fixed; inset:0` over the entire
- * window with `-webkit-app-region:none !important`; that single full-window
- * no-drag rectangle cancels DSH's 40px caption strip, so the title bar cannot be
- * dragged and double-click-to-maximize stops working (observed on DSH
- * 0.2.2-rc.1, Windows).
+ * Two independent problems are covered here; neither depends on the wallpaper or
+ * glass switches, so this stylesheet is emitted whenever the plugin is loaded.
  *
- * `initial` restores the property to "unset", which removes the layer from that
- * subtraction without touching its own pointer behaviour. The selector carries
- * specificity (1,2,2) + `!important`, which outranks the overlay's (1,0,0) +
- * `!important` while leaving dsh-pet's own code untouched (so updating the pet
- * plugin cannot break this, and this cannot break the pet).
+ * 1. Windows — Electron derives the draggable region as
+ *      (every `-webkit-app-region: drag` rectangle)
+ *      MINUS (every `-webkit-app-region: no-drag` rectangle)
+ *    and that subtraction ignores `pointer-events`. The dsh-pet "吃白饭"
+ *    mini-game mounts `#dsh-pet-baifan-root` as `position:fixed; inset:0` over
+ *    the whole window with `-webkit-app-region:none !important`; that single
+ *    full-window no-drag rectangle cancels DSH's 40px caption strip, so the
+ *    title bar cannot be dragged and double-click-to-maximize stops working
+ *    (observed on Windows).
+ *    `initial` restores the property to "unset", removing the layer from that
+ *    subtraction without touching its pointer behaviour. The selector carries
+ *    specificity (1,2,2) + `!important`, outranking the overlay's (1,0,0) +
+ *    `!important` while leaving dsh-pet's own code untouched, so updating the
+ *    pet plugin cannot break this and this cannot break the pet.
  *
- * Scoped to `html[data-windows-titlebar]`, so macOS/Linux output is empty.
+ * 2. macOS (DSH ≥ 0.2.2-rc.2, `window-drag-regions` upgrade guide) — Desktop no
+ *    longer grants a global `no-drag` exclusion to controls and ARIA roles
+ *    anywhere in the page. Only controls inside `data-window-drag` rows or
+ *    `data-window-drag-controls` scopes get one automatically, and a custom
+ *    overlay that covers a header must now declare its own region. The wallpaper
+ *    layer is such an overlay: it is mounted `position: fixed; inset: 0` over the
+ *    window, so the client half marks it with `data-window-drag-exclude` and the
+ *    rule below keeps its children out of any inherited drag region. The layer
+ *    is `pointer-events: none`, so this changes only the window-region
+ *    computation, never click behaviour.
  *
- * @returns CSS text, or '' when this is not a Windows titlebar host.
+ * Scoped to the platforms that need it, so a plain Web page gets an inert (but
+ * harmless) stylesheet.
+ *
+ * @returns CSS text.
  */
 export function buildWindowDragCss() {
   return `
@@ -390,6 +403,12 @@ html[data-windows-titlebar] body [id^="dsh-pet-baifan"] {
 html[data-windows-titlebar] body #dsh-pet-baifan-root *,
 html[data-windows-titlebar] body [id^="dsh-pet-baifan"] * {
   -webkit-app-region: initial !important;
+}
+[data-platform="darwin"] #${BACKDROP_LAYER_ID},
+[data-platform="darwin"] #${BACKDROP_LAYER_ID} > img,
+[data-platform="darwin"] #${BACKDROP_LAYER_ID} > video,
+[data-platform="darwin"] #${BACKDROP_LAYER_ID} > .dsh-backdrop-scrim {
+  -webkit-app-region: no-drag;
 }
 `.trim();
 }

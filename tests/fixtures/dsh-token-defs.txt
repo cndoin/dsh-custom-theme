@@ -8,8 +8,8 @@
 --dsh-content-font-delta-secondary:calc(var(--dsh-content-font-size-secondary) - 13px)
 --dsh-content-font-delta:calc(var(--dsh-content-font-size,14px) - 14px)
 --dsh-content-font-size-secondary:min(calc(var(--dsh-content-font-size,14px) - 1px), max(13px, calc(var(--dsh-content-font-size,14px) - 2px)))
---dsh-font-family-code-default:\"SF Mono\", \"JetBrains Mono\", \"Fira Code\", Consolas, \"Liberation Mono\", Menlo, Courier, \"PingFang SC\", \"Microsoft YaHei\"
---dsh-font-family-text-default:-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Hiragino Sans GB\", \"Microsoft YaHei\", \"Helvetica Neue\", Helvetica, Arial, sans-serif
+--dsh-font-family-code-default:"SF Mono", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, Courier, "PingFang SC", "Microsoft YaHei"
+--dsh-font-family-text-default:-apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, sans-serif
 --dsh-scrollbar-thumb-border:0px
 --dsh-scrollbar-thumb-hover:var(--dsw-alias-scrollbar-hover-l1)
 --dsh-scrollbar-thumb:var(--dsw-alias-scrollbar-bg-l1)
@@ -56,6 +56,7 @@
 --dsw-alias-border-l3:#ffffff29
 --dsw-alias-border-l4:#00000029
 --dsw-alias-border-l4:#fff3
+--dsw-alias-border-selected:var(--dsw-static-neutral-bluish-400)
 --dsw-alias-brand-primary-invert:var(--dsw-static-neutral-bluish-1000)
 --dsw-alias-brand-primary-invert:var(--dsw-static-neutral-bluish-50)
 --dsw-alias-brand-primary-new-colorprimary-new-color:#4176e6
@@ -90,6 +91,15 @@
 --dsw-alias-button-tool-bar-fill-invisible:#1f1f1f5c
 --dsw-alias-button-tool-bar-fill:#54555780
 --dsw-alias-button-tool-bar-hover:#54555799
+--dsw-alias-card-fill-hover:var(--dsw-static-neutral-100)
+--dsw-alias-card-fill-hover:var(--dsw-static-neutral-800)
+--dsw-alias-card-fill:var(--dsw-static-neutral-50)
+--dsw-alias-card-fill:var(--dsw-static-neutral-850)
+--dsw-alias-card-tile-fill:color-mix(in srgb, var(--dsw-static-neutral-00) 5%, transparent)
+--dsw-alias-card-tile-fill:color-mix(in srgb, var(--dsw-static-neutral-00) 50%, transparent)
+--dsw-alias-chart-messages:var(--dsw-static-blue-450)
+--dsw-alias-chart-system:var(--dsw-static-neutral-bluish-400)
+--dsw-alias-chart-tools:var(--dsw-static-violet-400)
 --dsw-alias-code-diff-added:var(--dsw-static-green-500-a08)
 --dsw-alias-code-diff-added:var(--dsw-static-green-500-a12)
 --dsw-alias-code-diff-deleted:var(--dsw-static-red-400-a12)
@@ -106,6 +116,12 @@
 --dsw-alias-file-diff-deleted-gutter:#fdece9
 --dsw-alias-file-diff-deleted-marker:#ba2723
 --dsw-alias-file-diff-deleted-marker:#fa423e
+--dsw-alias-hovercard-bg:var(--dsw-static-neutral-bluish-850)
+--dsw-alias-hovercard-label-primary:var(--dsw-static-neutral-bluish-00)
+--dsw-alias-hovercard-label-secondary:var(--dsw-static-neutral-bluish-300)
+--dsw-alias-hovercard-label-tertiary:var(--dsw-static-neutral-bluish-400)
+--dsw-alias-hovercard-state-done:var(--dsw-static-violet-400)
+--dsw-alias-hovercard-state-error:var(--dsw-static-red-400)
 --dsw-alias-illustration-background:var(--dsw-static-neutral-bluish-55)
 --dsw-alias-illustration-background:var(--dsw-static-neutral-bluish-850)
 --dsw-alias-illustration-backing:var(--dsw-static-neutral-bluish-310)
@@ -128,6 +144,20 @@
 --dsw-alias-interactive-bg-hover-solid:var(--dsw-static-neutral-bluish-800)
 --dsw-alias-interactive-bg-hover:#2631480f
 --dsw-alias-interactive-bg-hover:#ffffff14
+--dsw-alias-json-tree-hover:#3c40430a
+--dsw-alias-json-tree-hover:#e8eaed0d
+--dsw-alias-json-tree-icon:#5f6368
+--dsw-alias-json-tree-icon:#9aa0a6
+--dsw-alias-json-tree-keyword:#1c00cf
+--dsw-alias-json-tree-keyword:#99c8ff
+--dsw-alias-json-tree-number:#1c00cf
+--dsw-alias-json-tree-number:#99c8ff
+--dsw-alias-json-tree-property:#5db0d7
+--dsw-alias-json-tree-property:#881391
+--dsw-alias-json-tree-punctuation:#202124
+--dsw-alias-json-tree-punctuation:#e8eaed
+--dsw-alias-json-tree-string:#c41a16
+--dsw-alias-json-tree-string:#f28b82
 --dsw-alias-label-caption:var(--dsw-static-neutral-bluish-400)
 --dsw-alias-label-caption:var(--dsw-static-neutral-bluish-600)
 --dsw-alias-label-deep-diving-shimmer:color-mix(in srgb, var(--dsw-static-blue-300) 65%, var(--dsw-static-deepseek-400))
@@ -138,6 +168,7 @@
 --dsw-alias-label-dimmed:var(--dsw-static-neutral-bluish-750)
 --dsw-alias-label-document-preview:var(--dsw-static-neutral-bluish-300)
 --dsw-alias-label-document-preview:var(--dsw-static-neutral-bluish-700)
+--dsw-alias-label-on-color:var(--dsw-static-neutral-bluish-00)
 --dsw-alias-label-primary-bluish:var(--dsw-static-blue-900)
 --dsw-alias-label-primary-bluish:var(--dsw-static-neutral-bluish-50)
 --dsw-alias-label-primary-dimmed:var(--dsw-static-neutral-bluish-100)
@@ -215,12 +246,15 @@
 --dsw-alias-state-warn-tertiary:var(--dsw-static-amber-900)
 --dsw-alias-switch-thumb:var(--dsw-static-neutral-bluish-00)
 --dsw-alias-switch-thumb:var(--dsw-static-neutral-bluish-400)
+--dsw-alias-toast-action:var(--dsw-static-deepseek-400)
 --dsw-alias-toast-bg:var(--dsw-static-neutral-bluish-750)
 --dsw-alias-toast-bg:var(--dsw-static-neutral-bluish-800)
 --dsw-alias-toast-label:var(--dsw-static-neutral-bluish-00)
 --dsw-alias-tooltip-bg:var(--dsw-static-neutral-bluish-750)
 --dsw-alias-tooltip-bg:var(--dsw-static-neutral-bluish-850)
 --dsw-alias-tooltip-key-bg:color-mix(in srgb, var(--dsw-alias-tooltip-bg), white 18%)
+--dsw-alias-tooltip-label:var(--dsw-static-neutral-bluish-00)
+--dsw-alias-trajectory-accent:var(--dsw-static-blue-500)
 --dsw-alias-turn-trigger-bg-hover:var(--dsw-alias-interactive-bg-active)
 --dsw-alias-turn-trigger-bg-hover:var(--dsw-alias-interactive-bg-hover)
 --dsw-alias-turn-trigger-bg:var(--dsw-alias-interactive-bg-hover)
@@ -246,7 +280,7 @@
 --dsw-font-base-strong-16-font-weight:500
 --dsw-font-base-strong-16-line-height:24px
 --dsw-font-base-strong-16:500 16px/24px var(--dsw-font-family)
---dsw-font-family-brand:\"Montserrat\", var(--dsh-font-family-text-default)
+--dsw-font-family-brand:"Montserrat", var(--dsh-font-family-text-default)
 --dsw-font-family:var(--dsh-font-family-text,var(--dsh-font-family-text-default)), var(--dsh-font-family-text-default)
 --dsw-font-family:var(--dsh-font-family-text-default)
 --dsw-font-l-20-font-family:var(--dsw-font-family)
@@ -442,6 +476,9 @@
 --dsw-specific-bubble-highlight:var(--dsw-static-neutral-bluish-750)
 --dsw-specific-bubble:var(--dsw-static-deepseek-50)
 --dsw-specific-bubble:var(--dsw-static-neutral-bluish-850)
+--dsw-specific-file-upload-track:#00000014
+--dsw-specific-guide-hero:var(--dsw-static-neutral-200)
+--dsw-specific-guide-hero:var(--dsw-static-neutral-700)
 --dsw-specific-input-major:var(--dsw-static-neutral-bluish-00)
 --dsw-specific-input-major:var(--dsw-static-neutral-bluish-850)
 --dsw-specific-login-input:var(--dsw-static-neutral-bluish-50)
@@ -453,10 +490,28 @@
 --dsw-specific-selector:var(--dsw-static-neutral-bluish-800)
 --dsw-specific-sidebar-fill:var(--dsw-static-neutral-bluish-50)
 --dsw-specific-sidebar-fill:var(--dsw-static-neutral-bluish-900)
+--dsw-specific-sidebar-glass-collapsed-fill:transparent
+--dsw-specific-sidebar-glass-collapsed-fill:var(--dsw-specific-sidebar-glass-fill)
+--dsw-specific-sidebar-glass-collapsed-hover:var(--dsw-alias-interactive-bg-hover)
+--dsw-specific-sidebar-glass-collapsed-hover:var(--dsw-specific-sidebar-glass-hover)
+--dsw-specific-sidebar-glass-fill:#ffffff26
+--dsw-specific-sidebar-glass-fill:#ffffff8c
+--dsw-specific-sidebar-glass-hover:#fff3
+--dsw-specific-sidebar-glass-hover:#ffffff4d
 --dsw-specific-sidebar-nav-item-active-accent:var(--dsw-static-deepseek-100)
 --dsw-specific-sidebar-nav-item-active-accent:var(--dsw-static-neutral-bluish-800)
 --dsw-specific-sidebar-nav-item-active:var(--dsw-static-neutral-bluish-100)
 --dsw-specific-sidebar-nav-item-active:var(--dsw-static-neutral-bluish-750)
+--dsw-specific-sidebar-right-flash:var(--dsw-alias-brand-primary-new-colorprimary-new-color)
+--dsw-specific-sidebar-right-flash:var(--dsw-static-neutral-00)
+--dsw-specific-sidebar-tint:color-mix(in srgb, color-mix(in srgb, var(--dsw-specific-sidebar-fill) 97%, #7a9bf0) 40%, transparent)
+--dsw-specific-sidebar-tint:color-mix(in srgb, var(--dsw-specific-sidebar-fill) 50%, transparent)
+--dsw-specific-sidebar-wash-bottom-clear:#8f89b800
+--dsw-specific-sidebar-wash-bottom:#8f89b812
+--dsw-specific-sidebar-wash-bottom:#8f89b817
+--dsw-specific-sidebar-wash-top-clear:#7a9bf000
+--dsw-specific-sidebar-wash-top:#7a9bf014
+--dsw-specific-sidebar-wash-top:#7a9bf01a
 --dsw-specific-tip:var(--dsw-static-neutral-bluish-60)
 --dsw-specific-tip:var(--dsw-static-neutral-bluish-800)
 --dsw-static-amber-100:#fef5e7
