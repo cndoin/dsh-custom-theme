@@ -78,7 +78,7 @@ angle brackets, backticks, backslashes, braces, semicolons and `var(--same-name)
 
 ## Wallpaper & glass
 
-`src/backdrop.js` is pure CSS/SVG generation. `tests/backdrop.test.mjs` (33 tests) covers
+`src/backdrop.js` generates CSS. `tests/backdrop.test.mjs` (33 tests) covers
 URL validation, clamping, token isolation, video attributes, reduced-motion / hidden-page
 pausing, the two window-region repairs, and a VM end-to-end DOM injection.
 
@@ -97,7 +97,6 @@ These are **CSS-rule / computed-style checks**, not a visual pass over the live 
 
 ```text
 buildBackdropCss(DEFAULT_BACKDROP)      → ''   (0 bytes)
-buildRefractionSvg(DEFAULT_BACKDROP)    → ''   (0 bytes)
 buildBackgroundTokens(DEFAULT, {})      → {}
 has backdrop-filter                    → false
 has filter: url(                       → false
@@ -107,7 +106,8 @@ This is asserted by `tests/backdrop.test.mjs`. An earlier internal revision ship
 `glass: true` and `refract: 10` by default, putting a `backdrop-filter` plus an SVG
 `feTurbulence`/`feDisplacementMap` chain on the composer on every page load. Since the
 message list repaints continuously during streaming, that filter was recomputed every
-frame. It is now strictly opt-in.
+frame. The current implementation keeps blur opt-in and draws the pointer effects on
+an inset light layer using gradients.
 
 ## Honest gaps
 

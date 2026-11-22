@@ -6,10 +6,10 @@
  *
  *   - a full-window wallpaper (image or video) with optional blur + scrim,
  *   - optional liquid glass on the composer input, with adjustable opacity,
- *     blur, saturation, radius, edge highlight and refraction.
+ *     blur, saturation, radius, edge highlight and water lighting.
  *
- * DOM-free: the functions below return CSS text, an SVG filter definition, a
- * media descriptor and token overrides. `src/client.template.js` performs the
+ * DOM-free: the functions below return CSS text, a media descriptor and
+ * token overrides. `src/client.template.js` performs the
  * actual DOM writes, so all of this is unit-testable in plain Node.
  *
  * Security: a pasted URL is never interpolated into CSS — it is validated and
@@ -57,11 +57,8 @@ export const DEFAULT_BACKDROP = Object.freeze({
   glassRadius: 20,            // 0..32 px
   glassHighlight: 55,         // edge highlight, 0..80 %
   glassShadow: 30,            // outer shadow, 0..60 %
-  refract: 0,                 // 0..24, 0 = off. The SVG displacement path is
-                              // intentionally NOT wired onto the composer (it
-                              // breaks position:fixed popovers); >0 only emits
-                              // a decorative-layer-only filter definition.
-  refractFrequency: 15,       // 5..30 → baseFrequency 0.005..0.030
+  refract: 6,                 // 0..24, strength of the water-light pattern
+  refractFrequency: 15,       // 5..30, controls how tightly the press ripple tapers
   performance: false,         // lite mode: no refraction, no shimmer, shallow blur
   reducedMotion: true,        // pause the video when the OS asks
   glassPreset: 'balanced',    // 'lite' | 'balanced' | 'fine' | 'custom'
@@ -106,7 +103,7 @@ export const GLASS_PRESETS = Object.freeze({
     // "balanced" rather than "custom".
     performance: false, glassOpacity: 14, glassBlur: 10, glassSaturate: 180,
     glassRadius: 20, glassHighlight: 55, glassShadow: 30,
-    refract: 0, refractFrequency: 15,
+    refract: DEFAULT_BACKDROP.refract, refractFrequency: 15,
   }),
   fine: Object.freeze({
     performance: false, glassOpacity: 10, glassBlur: 14, glassSaturate: 190,
@@ -117,7 +114,7 @@ export const GLASS_PRESETS = Object.freeze({
 
 /**
  * Whether the cheap glass recipe is active. Kept in one place so the CSS, the
- * SVG refraction and the pointer tracker agree on the same switch.
+ * water lighting and the pointer tracker agree on the same switch.
  */
 export function isLiteGlass(backdrop) {
   return backdrop.glassPreset === 'lite';
@@ -211,8 +208,11 @@ export function normalizeBackdrop(raw) {
     glassPreset: ['lite', 'balanced', 'fine', 'custom'].includes(input.glassPreset)
       ? input.glassPreset : DEFAULT_BACKDROP.glassPreset,
   };
-  // Keep the label honest when a stored profile has custom numbers but still
-  // carries a named preset from an older build.
+  if (input.glassPreset === 'balanced' && backdrop.refract === 0
+    && matchGlassPreset({ ...backdrop, refract: DEFAULT_BACKDROP.refract }) === 'balanced') {
+    backdrop.refract = DEFAULT_BACKDROP.refract;
+  }
+  // Keep custom settings, including a deliberate zero for water lighting.
   backdrop.glassPreset = input.glassPreset === 'custom' ? 'custom' : matchGlassPreset(backdrop);
   return { backdrop, sourceError: checked.ok ? null : checked.reason };
 }
@@ -417,19 +417,8 @@ html[data-windows-titlebar] body [id^="dsh-pet-baifan"] * {
  * Liquid glass on DSH's composer frame (`[data-composer-card]`, a stable
  * attribute — CSS-module class names are hashed and must not be targeted).
  *
- * Recipe: translucent tinted surface + `blur · saturate · brightness · contrast`
- * backdrop filter, a 1px specular edge, an inset top highlight, chromatic edge
- * shadows (colour dispersion without a pseudo-element, because DSH already uses
- * `::after` on one card variant), and a separate `::before` specular line.
- *
- * Deliberately does NOT use an SVG `filter: url(...)` on the composer: a filter
- * creates a new containing block, which re-anchors the card's `position:fixed`
- * popovers (@mention, attachment preview, emoji, tooltip) and clips their
- * overflow. `isolation: isolate` is likewise omitted (it adds a stacking
- * context for no benefit here). No `!important` on background/border: those
- * would override DSH's `:focus-visible`, `[data-error]` and drag-highlight
- * states. A higher-specificity selector on the decoration-only properties is
- * used where the host must be won over.
+ * The frosted backing holds its shape. A second layer paints the moving light
+ * separately, so pointer motion cannot displace the outline or the controls.
  *
  * @param backdrop - normalised backdrop.
  * @returns CSS text.
@@ -445,73 +434,87 @@ export function buildGlassCss(backdrop) {
   const hi = num(backdrop.glassHighlight / 100);
   const sh = num(backdrop.glassShadow / 100);
   const radius = backdrop.glassRadius;
+  const card = `body[${GLASS_ATTR}="on"] [data-composer-card]`;
+  const surface = `${card}:where(:not([data-error], [aria-invalid="true"], [data-dragging]))`;
+  // The native workspace picker uses ::after for its own dashed outline.
+  const lightSurface = `${surface}:where(:not([class*="_cardWorkspaceTrigger"]))`;
+  const water = !lite && !backdrop.performance ? backdrop.refract / 24 : 0;
+  const rippleFeather = Math.round(27 - backdrop.refractFrequency * 0.46);
   const filter = lite
     ? `blur(${blur}px)`
     : `blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)})`;
   const transition = lite
     ? 'transition: none;'
-    : `transition: --glass-glow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                 box-shadow 0.2s ease-out;`;
+    : 'transition: --glass-glow 180ms cubic-bezier(0.22, 1, 0.36, 1);';
 
   return `
 /* ---- Pointer state. Only the INTENSITY is interpolated; position variables
    must never be transitioned (Google's interactive-content-reveal guide:
    animating position produces a lagging trail). ---- */
 @property --glass-glow { syntax: '<number>'; inherits: false; initial-value: 0; }
+${water > 0 ? `@property --glass-ripple-size { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --glass-ripple-alpha { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --glass-light-scale { syntax: '<number>'; inherits: true; initial-value: 1; }` : ''}
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  /* State-safe base selector: the resting decoration only applies while the
-     composer is NOT focused and carries no error/highlight state, so DSH's
-     :focus-visible border, [data-error] and drag highlight always win. */
-  body[${GLASS_ATTR}="on"] [data-composer-card]:not(:focus-within):not([data-error]) {
-    /* All decoration lives in the element's own background layers: no
-       pseudo-elements, no child selectors, and — crucially — NO transform or
-       scale and NO SVG filter (a filter would re-anchor position:fixed
-       popovers). Scaling the composer itself squeezed the whole page
-       (reported by the user); high-star implementations (smoothui, Twilight
-       Echo) move only the highlight, never the element. */
+  ${surface} {
+    /* Keep the material present while typing. The native border and focus
+       shadow still take over when a control inside the card has focus. */
     position: relative;
-    --glass-x: 50%;
-    --glass-y: 0%;
-    --glass-ang: 135deg;
-    --glass-glow: 0.35;
-    background:
-      /* 1. Pointer-following specular hotspot — soft, WHITE, single layer.
-         smoothui: radial-gradient(closest-side, .3, .07@48%, transparent@74%). */
-      radial-gradient(circle 260px at var(--glass-x) var(--glass-y),
-        rgba(255,255,255,calc(0.04 + var(--glass-glow) * 0.26)) 0%,
-        rgba(255,255,255,calc(0.02 + var(--glass-glow) * 0.06)) 48%,
-        transparent 74%),
-      /* 2. A restrained specular sweep whose angle follows the cursor
-         (rdev / Twilight Echo: 135 + offsetX * 1.2 deg). */
-      linear-gradient(var(--glass-ang),
-        transparent 30%,
-        rgba(255,255,255,calc(var(--glass-glow) * 0.10)) 50%,
-        transparent 70%),
-      /* 3. Static 1px top specular line (Z1Code). */
-      linear-gradient(90deg, transparent 8%, rgba(255,255,255,${num(Math.min(0.7, hi + 0.15))}) 50%, transparent 92%) top / 100% 1px no-repeat,
-      /* 4. Soft overhead light. */
-      linear-gradient(180deg, rgba(255,255,255,${num(hi * 0.12)}) 0%, transparent 38%);
-    /* The tinted surface is a colour, not an image: it goes in
-       background-color AFTER the shorthand (which resets it). */
-    background-color: color-mix(in srgb, var(--dsw-specific-input-major, #202024) ${Math.round(alpha * 100)}%, transparent);
-    background-repeat: no-repeat;
-    -webkit-backdrop-filter: ${filter};
-    backdrop-filter: ${filter};
+    isolation: isolate;
+    background: transparent;
     border-radius: ${radius}px;
-    border: 1px solid rgba(255,255,255,${num(hi * 0.6)});
-    box-shadow:
-      0 8px 32px rgba(0,0,0,${sh}),
-      inset 0 1px 0 rgba(255,255,255,${num(Math.max(0.1, hi * 0.35))}),
-      inset  2px  2px 1px -1px rgba(255,255,255,${num(hi * 0.6)}),
-      inset -2px -2px 1px -1px rgba(255,255,255,${num(hi * 0.35)});
+    --glass-x: 50%;
+    --glass-y: 16%;
+    --glass-glow: 0.28;
     ${transition}
   }
-  /* Hover only brightens the light — no size change, no layout shift. */
-  body[${GLASS_ATTR}="on"] [data-composer-card]:hover { --glass-glow: 1; }
+  ${surface}::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: linear-gradient(180deg, rgba(255,255,255,${num(hi * 0.14)}), transparent 66%);
+    background-color: color-mix(in srgb, var(--dsw-specific-input-major, #202024) ${Math.round(alpha * 100)}%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,${num(hi * 0.32)}),
+      inset 0 1px 0 rgba(255,255,255,${num(hi * 0.35)}),
+      inset 0 -1px 0 rgba(0,0,0,${num(hi * 0.22)});
+    -webkit-backdrop-filter: ${filter};
+    backdrop-filter: ${filter};
+  }
+  ${lite ? '' : `${lightSurface}::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    z-index: -1;
+    border-radius: max(0px, ${radius - 2}px);
+    pointer-events: none;
+    --glass-glow: inherit;
+    opacity: max(var(--glass-glow), var(--glass-ripple-alpha, 0));
+    ${water > 0 ? 'scale: var(--glass-light-scale) 1;' : ''}
+    background-image:
+      ${water > 0 ? `radial-gradient(circle at var(--glass-press-x, 50%) var(--glass-press-y, 50%),
+        transparent max(0px, calc(var(--glass-ripple-size) - ${rippleFeather}px)),
+        rgb(255 255 255 / calc(var(--glass-ripple-alpha) * ${num(0.10 + 0.30 * water)})) var(--glass-ripple-size),
+        transparent calc(var(--glass-ripple-size) + ${rippleFeather}px)),` : ''}
+      radial-gradient(ellipse 240px 26px at var(--glass-x) -4px,
+        rgb(255 255 255 / ${num(hi * 0.38)}) 0%, rgb(255 255 255 / ${num(hi * 0.11)}) 52%, transparent 100%),
+      radial-gradient(ellipse 188px 68px at var(--glass-x) var(--glass-y),
+        rgb(255 255 255 / ${num(hi * 0.11)}) 0%, transparent 100%);
+  }`}
+  ${surface}:not(:focus-within) {
+    border-color: rgba(255,255,255,${num(hi * 0.6)});
+    box-shadow:
+      0 8px 32px rgba(0,0,0,${sh}),
+      0 2px 8px rgba(0,0,0,${num(sh * 0.38)});
+  }
+  ${surface}:focus-within { --glass-glow: 0.52; }
+  ${lite ? '' : `${surface}:hover { --glass-glow: 1; }`}
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  body[${GLASS_ATTR}="on"] [data-composer-card]:not(:focus-within):not([data-error]) {
+  ${surface} {
     background: color-mix(in srgb, var(--dsw-specific-input-major, #202024) 92%, transparent);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -519,19 +522,24 @@ export function buildGlassCss(backdrop) {
 }
 /* Touch / reduced-motion: fixed light source, no tracking, no transition.
    smoothui and Twilight Echo both keep the GLASS but freeze the motion. */
-@media (pointer: coarse), (prefers-reduced-motion: reduce) {
-  body[${GLASS_ATTR}="on"] [data-composer-card] {
-    --glass-glow: 0.35;
+@media (any-pointer: coarse) and (not (any-pointer: fine)), (prefers-reduced-motion: reduce) {
+  ${surface}, ${surface}:hover, ${surface}:focus-within {
+    --glass-glow: 0.28;
     transition: none;
   }
 }
-@media (prefers-reduced-transparency: reduce) {
-  body[${GLASS_ATTR}="on"] [data-composer-card] {
+${water > 0 ? `@media (prefers-reduced-motion: reduce) {
+  ${lightSurface}::after { scale: none; }
+}` : ''}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  ${surface} {
     background: var(--dsw-specific-input-major, #202024);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     filter: none;
   }
+  ${surface}::before { content: none; }
+  ${lite ? '' : `${lightSurface}::after { content: none; }`}
 }
 `;
 }
@@ -540,7 +548,6 @@ export function buildGlassCss(backdrop) {
  * Compute the pointer-driven CSS variable values for one glass element.
  *
  * Pure function — no DOM. Adapted from high-star, production implementations:
- *   - rdev/liquid-glass-react (6640★): `135 + offsetX * 1.2` degree highlight.
  *   - Twilight Echo (424★, real Electron app): `MAX_ELASTIC_SHIFT_PX = 10`,
  *     "elastic shifts beyond 10px push neighbouring layout" — so the pointer
  *     may nudge the HIGHLIGHT by at most 10px, never the element itself.
@@ -566,10 +573,6 @@ export function pointerGlassVars(event, rect, options = {}) {
   const px = Math.min(100, Math.max(0, ((event.clientX - left) / w) * 100));
   const py = Math.min(100, Math.max(0, ((event.clientY - top) / h) * 100));
 
-  // Specular sweep angle follows the cursor (rdev / Twilight Echo).
-  const offsetX = ((event.clientX - cx) / w) * 100;
-  const angle = 135 + offsetX * 1.2;
-
   // A tiny elastic nudge of the light, clamped to `shift` px. This is the
   // "liquid" give; the element and its layout never move.
   const ex = Math.max(-shift, Math.min(shift, (event.clientX - cx) * 0.012));
@@ -581,7 +584,6 @@ export function pointerGlassVars(event, rect, options = {}) {
   return {
     '--glass-x': signed(px, ex),
     '--glass-y': signed(py, ey),
-    '--glass-ang': `${num(angle)}deg`,
   };
 }
 
@@ -589,43 +591,8 @@ export function pointerGlassVars(event, rect, options = {}) {
 export function restingGlassVars() {
   return {
     '--glass-x': '50%',
-    '--glass-y': '0%',
-    '--glass-ang': '135deg',
+    '--glass-y': '16%',
   };
-}
-
-/**
- * SVG displacement filter definition for the refraction effect.
- *
- * Kept as a public export (the client half still calls it) and still emitted
- * when a user EXPLICITLY opts in with `glass:true` and `refract>0`. However it
- * is deliberately a decoration-only definition: the composer CSS no longer
- * references `url(#dsh-glass-refract)`. Applying an SVG filter to
- * `[data-composer-card]` created a new containing block that re-anchored its
- * `position:fixed` popovers and clipped their overflow, so that path has been
- * removed. The frosted `backdrop-filter` look is retained without it.
- *
- * Returns '' whenever glass is off, refraction is 0 (the new default), or
- * performance mode is on.
- *
- * @param backdrop - normalised backdrop.
- * @returns an `<svg>` string, or '' when refraction is off.
- */
-export function buildRefractionSvg(backdrop) {
-  // Explicit opt-in only; default refract is now 0 so a fresh profile never
-  // builds this SVG. The filter is never applied to the composer itself.
-  const scale = backdrop.glass === true && !backdrop.performance ? backdrop.refract : 0;
-  if (scale <= 0) return '';
-  const freq = (backdrop.refractFrequency / 1000).toFixed(3);
-  return `<svg width="0" height="0" aria-hidden="true" style="position:absolute" xmlns="http://www.w3.org/2000/svg"><defs>
-  <filter id="dsh-glass-refract" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
-    <feGaussianBlur in="SourceGraphic" stdDeviation="0.3" result="preblur"/>
-    <feTurbulence type="fractalNoise" baseFrequency="${freq} ${freq}" numOctaves="2" seed="42" result="noise"/>
-    <feGaussianBlur in="noise" stdDeviation="3" result="smooth"/>
-    <feDisplacementMap in="preblur" in2="smooth" scale="${scale}" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
-    <feColorMatrix in="displaced" type="saturate" values="1.3"/>
-  </filter>
-</defs></svg>`;
 }
 
 /**

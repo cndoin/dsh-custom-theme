@@ -24,6 +24,10 @@ window.__ModuleLoader__.load({
     const NAMESPACE = 'custom-theme';
     const STORAGE_KEY = 'dsh-custom-theme/v1';
     const TOKEN_PREFIX = '--dsw-';
+    const MOTION_ATTR = 'data-dsh-custom-theme-motion';
+    const STREAM_SELECTOR = 'div[data-streaming]';
+    const FADE_STEPS = [48, 65, 80, 92];
+    const FADE_STEP_MS = 36;
 
     // ---------------------------------------------------------------------
     // Theme core (generated from src/core.js by scripts/build.mjs).
@@ -98,6 +102,7 @@ window.__ModuleLoader__.load({
     function loadSaved() {
       const fallback = {
         css: '', name: '', enabled: false,
+        motion: false,
         options: { ...DEFAULT_OPTIONS },
         backdrop: { ...DEFAULT_BACKDROP },
       };
@@ -129,6 +134,7 @@ window.__ModuleLoader__.load({
           css: typeof parsed.css === 'string' ? parsed.css : '',
           name: typeof parsed.name === 'string' ? parsed.name : '',
           enabled: parsed.enabled === true,
+          motion: parsed.motion === true,
           options,
           backdrop: normalizeBackdrop(parsed.backdrop).backdrop,
         };
@@ -159,7 +165,7 @@ window.__ModuleLoader__.load({
      */
     function save(state) {
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, fontsMigrationV2: true }));
         return null;
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
@@ -336,6 +342,13 @@ window.__ModuleLoader__.load({
   overflow: auto;
 }
 .cctDivider { height: 0.5px; background: var(--dsw-alias-border-l1); }
+@media (max-width: 640px) {
+  .cctSliderRow { grid-template-columns: minmax(0, 1fr) 85px; }
+  .cctSliderValue { text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cctButton { transition: none; }
+}
 `;
 
     // ---------------------------------------------------------------------
@@ -350,7 +363,7 @@ window.__ModuleLoader__.load({
      *     `pointerover/pointerout` pair stays resident; the high-frequency
      *     `pointermove` is attached only while the pointer is over the card.
      *     Frames are coalesced (latest-wins) and capped at ~32ms so a blurred,
-     *     SVG-filtered surface never starves scrolling.
+     *     moving light never starves scrolling.
      *   - educlopez/smoothui (1046★): only the LIGHT moves, with a critically
      *     damped spring; the element itself never scales (scaling it squeezed
      *     the whole page — the user's exact complaint).
@@ -372,11 +385,11 @@ window.__ModuleLoader__.load({
       let card = null;
       let rect = null;
       let boundaryAttached = false;
-      // A blurred backdrop-filter surface repaints on every CSS-variable write.
-      // Capping those writes to ~30 fps (instead of one per pointermove/rAF)
-      // is the single cheapest way to stop a low-end GPU from dropping frames
-      // while the user types. `intervalMs = 0` keeps the original 60 fps path.
+      // Only the light layer moves. Custom performance mode can still cap its
+      // updates, while Balanced and Fine follow the display's animation frames.
       let intervalMs = 0;
+      let pressEnabled = false;
+      let pressMotion = null;
       let lastFlush = 0;
       let timer = 0;
       const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -384,11 +397,8 @@ window.__ModuleLoader__.load({
 
       const mq = (q) => (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
         ? window.matchMedia(q) : null);
-      const reduceMQ = mq('(prefers-reduced-motion: reduce)');
-      const coarseMQ = mq('(pointer: coarse)');
-      const fineMQ = mq('(hover: hover) and (pointer: fine)');
-      const isStatic = () => reduceMQ?.matches === true || coarseMQ?.matches === true
-        || fineMQ?.matches === false;
+      const reduceMQ = mq('(prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce), (forced-colors: active)');
+      const isStatic = () => reduceMQ?.matches === true;
 
       const doc = typeof document === 'undefined' ? null : document;
       const win = typeof window === 'undefined' ? null : window;
@@ -402,8 +412,7 @@ window.__ModuleLoader__.load({
         if (card === null) return;
         const style = card.style;
         for (const [name, value] of Object.entries(vars)) {
-          // Twilight Echo: do not invalidate the filtered layer when the
-          // coalesced position rounds to the same value as the last frame.
+          // Skip writes when the coalesced coordinates are unchanged.
           if (style.getPropertyValue(name) !== value) style.setProperty(name, value);
         }
       };
@@ -423,8 +432,7 @@ window.__ModuleLoader__.load({
       // A `pointerover` arriving without a preceding `pointerenter` still
       // arms the card; `pointerout` with a null relatedTarget (common when
       // leaving the window / Electron chrome) is treated as a real leave.
-      const isMouse = (event) => event.pointerType === undefined
-        || event.pointerType === 'mouse' || event.pointerType === '';
+      const canTrack = event => event.pointerType !== 'touch';
 
       const flush = () => {
         frame = 0;
@@ -435,13 +443,14 @@ window.__ModuleLoader__.load({
         const event = pending;
         pending = null;
         if (event === null || card === null) return;
-        if (isStatic() || rect === null) { write(restingGlassVars()); return; }
+        if (isStatic() || !card.isConnected) { reset(); return; }
+        rect ??= card.getBoundingClientRect();
         lastFlush = now();
         write(pointerGlassVars(event, rect, { elasticShift: 6 }));
       };
 
       const onMove = (event) => {
-        if (!enabled || card === null || !isMouse(event)) return;
+        if (!enabled || card === null || !canTrack(event)) return;
         pending = { clientX: event.clientX, clientY: event.clientY };
         if (intervalMs <= 0) {
           if (frame === 0 && typeof requestAnimationFrame === 'function') {
@@ -472,10 +481,11 @@ window.__ModuleLoader__.load({
       );
 
       const onOver = (event) => {
-        if (!enabled || !isMouse(event)) return;
+        if (!enabled || !canTrack(event) || isStatic()) return;
         const next = resolveCard(event.target);
         if (next === null) return;
         if (next !== card) {
+          reset();
           card = next;
           rect = next.getBoundingClientRect();      // measured ONCE on enter
         }
@@ -484,7 +494,7 @@ window.__ModuleLoader__.load({
       };
 
       const onOut = (event) => {
-        if (!enabled || !isMouse(event)) return;
+        if (!enabled || !canTrack(event)) return;
         const from = resolveCard(event.target);
         const to = resolveCard(event.relatedTarget);
         if (from === to) return;                    // moving between children
@@ -494,26 +504,56 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const onPress = (event) => {
+        if (!pressEnabled || isStatic() || event.button !== 0 || event.isPrimary === false) return;
+        const target = event.target;
+        const pressed = resolveCard(target);
+        if (pressed === null || pressed.matches('[data-error], [aria-invalid="true"], [data-dragging], [class*="_cardWorkspaceTrigger"]')
+          || target.closest(':disabled, [aria-disabled="true"]') || typeof pressed.animate !== 'function') return;
+        pressMotion?.cancel();
+        const bounds = pressed.getBoundingClientRect();
+        const position = pointerGlassVars(event, bounds, { elasticShift: 0 });
+        const reach = Math.round(Math.max(155, Math.min(300, bounds.width * 0.38)));
+        // The animated properties are inherited by the inner light layer.
+        // Neither resizing nor applying a filter to the interactive card is needed.
+        const keyframe = (offset, size, alpha, scale) => ({
+          offset, '--glass-ripple-size': `${size}px`, '--glass-ripple-alpha': alpha,
+          '--glass-light-scale': scale, '--glass-press-x': position['--glass-x'],
+          '--glass-press-y': position['--glass-y'],
+        });
+        const animation = pressed.animate([
+          keyframe(0, 12, 0.54, 0.96),
+          keyframe(0.19, 48, 1, 0.985),
+          keyframe(0.42, Math.round(reach * 0.61), 0.74, 1),
+          keyframe(0.63, Math.round(reach * 0.83), 0.45, 0.996),
+          keyframe(1, reach, 0, 1),
+        ], { duration: 460, easing: 'cubic-bezier(0.18, 0.62, 0.32, 1)' });
+        pressMotion = animation;
+        animation.onfinish = () => { if (pressMotion === animation) pressMotion = null; };
+      };
+
       const invalidateRect = () => { rect = null; };
-      const onWindowBlur = () => { if (card !== null) reset(); };
+      const onWindowBlur = () => { if (card !== null) reset(); pressMotion?.cancel(); pressMotion = null; };
       const onVisibility = () => { if (doc?.visibilityState === 'hidden') onWindowBlur(); };
 
       function attachMove() {
         if (moveAttached || !canListen) return;
-        win.addEventListener('pointermove', onMove, { passive: true });
+        win.addEventListener('pointermove', onMove, { capture: true, passive: true });
         moveAttached = true;
       }
       function detachMove() {
         if (!moveAttached) return;
-        win.removeEventListener('pointermove', onMove);
+        win.removeEventListener('pointermove', onMove, true);
         moveAttached = false;
       }
 
       const attachBoundary = () => {
         if (!canListen || boundaryAttached) return;
-        doc.addEventListener('pointerover', onOver, { passive: true });
-        doc.addEventListener('pointerout', onOut, { passive: true });
+        doc.addEventListener('pointerover', onOver, { capture: true, passive: true });
+        doc.addEventListener('pointerout', onOut, { capture: true, passive: true });
+        doc.addEventListener('pointerdown', onPress, { capture: true, passive: true });
         win.addEventListener('blur', onWindowBlur);
+        reduceMQ?.addEventListener?.('change', onWindowBlur);
         doc.addEventListener('visibilitychange', onVisibility);
         win.addEventListener('resize', invalidateRect, { passive: true });
         doc.addEventListener('scroll', invalidateRect, { capture: true, passive: true });
@@ -521,9 +561,11 @@ window.__ModuleLoader__.load({
       };
       const detachBoundary = () => {
         if (!canListen || !boundaryAttached) return;
-        doc.removeEventListener('pointerover', onOver);
-        doc.removeEventListener('pointerout', onOut);
+        doc.removeEventListener('pointerover', onOver, true);
+        doc.removeEventListener('pointerout', onOut, true);
+        doc.removeEventListener('pointerdown', onPress, true);
         win.removeEventListener('blur', onWindowBlur);
+        reduceMQ?.removeEventListener?.('change', onWindowBlur);
         doc.removeEventListener('visibilitychange', onVisibility);
         win.removeEventListener('resize', invalidateRect);
         doc.removeEventListener('scroll', invalidateRect, { capture: true });
@@ -531,25 +573,194 @@ window.__ModuleLoader__.load({
       };
 
       return {
-        /** @param ms - 0 = unthrottled (fine/balanced); 32 ≈ 30 fps (balanced);
-         *  0 also means "static" when the controller skips enable() entirely. */
-        enable(ms = 0) {
+        /** @param ms - minimum interval between light updates, or zero for rAF only. */
+        enable(ms = 0, water = false) {
           intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
+          pressEnabled = water;
+          if (!water) pressMotion?.cancel();
           if (enabled || !canListen) return;
           enabled = true;
           attachBoundary();
         },
-        configure(ms = 0) {
-          intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
-        },
         disable() {
           if (!enabled) return;
           enabled = false;
+          pressMotion?.cancel();
+          pressMotion = null;
           reset();
           detachBoundary();
         },
       };
     }
+    // ---------------------------------------------------------------------
+    // Optional interface motion
+    // ---------------------------------------------------------------------
+
+    const MOTION_CSS = `
+@media (prefers-reduced-motion: no-preference) {
+  body[${MOTION_ATTR}] :is(.cctButton, [data-composer-card] button):not(:disabled, [aria-disabled="true"]) {
+    transition: translate 140ms ease-out, opacity 140ms ease-out,
+      background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+  }
+  body[${MOTION_ATTR}] :is(.cctButton, [data-composer-card] button):active:not(:disabled, [aria-disabled="true"]) {
+    translate: 0 1px;
+    opacity: 0.82;
+    transition-duration: 75ms;
+  }
+  body[${MOTION_ATTR}] .cctStatus { animation: dsh-custom-theme-enter 160ms ease-out; }
+  @keyframes dsh-custom-theme-enter { from { opacity: 0; translate: 0 3px; } }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  body[${MOTION_ATTR}] [data-composer-card] button:hover:not(:active, :disabled, [aria-disabled="true"]) {
+    translate: 0 -1px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  ${FADE_STEPS.map((opacity, index) => `body[${MOTION_ATTR}] :is(${STREAM_SELECTOR}, ${STREAM_SELECTOR} *)::highlight(dsh-custom-theme-stream-${index}) {
+    color: color-mix(in srgb, currentColor ${opacity}%, transparent);
+  }`).join('\n')}
+}
+`;
+
+    /** Fade newly committed text in place, with no extra nodes or layout reads. */
+    function observeStreamReveal(doc, win) {
+      const registry = win.CSS?.highlights;
+      if (!registry || typeof win.Highlight !== 'function' || typeof win.StaticRange !== 'function'
+        || typeof win.MutationObserver !== 'function' || typeof win.matchMedia !== 'function') return () => {};
+
+      const preference = win.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)');
+      const names = FADE_STEPS.map((_, index) => `dsh-custom-theme-stream-${index}`);
+      const streams = new Map();
+      const dirty = new Set();
+      const textLimit = 24_000;
+      const duration = names.length * FADE_STEP_MS;
+      let timer = null;
+
+      function paint() {
+        if (timer !== null) win.clearTimeout(timer);
+        timer = null;
+        const now = win.performance.now();
+        const buckets = names.map(() => []);
+        let nextPaint = Infinity;
+        for (const [root, stream] of streams) {
+          if (!root.isConnected || !root.matches(STREAM_SELECTOR)) {
+            streams.delete(root);
+            continue;
+          }
+          if (dirty.has(root)) {
+            const text = root.textContent;
+            const previous = stream.text;
+            if (text.length <= textLimit && previous !== null && text.startsWith(previous)) {
+              if (text.length > previous.length) stream.spans.push({
+                start: previous.length, end: text.length, time: now,
+              });
+            } else {
+              stream.spans = [];
+              // A streaming paragraph can precede an existing Markdown block.
+              // Highlight an insertion there while skipping true rewrites.
+              if (previous !== null && text.length <= textLimit && text.length > previous.length) {
+                let start = 0;
+                while (start < previous.length && text[start] === previous[start]) start++;
+                if (text.endsWith(previous.slice(start))) stream.spans.push({
+                  start, end: start + text.length - previous.length, time: now,
+                });
+              }
+            }
+            stream.text = text.length <= textLimit ? text : null;
+            stream.ranges = [];
+          }
+          stream.spans = stream.spans.filter(span => now - span.time < duration);
+          if (stream.spans.length === 0) {
+            stream.ranges = [];
+            continue;
+          }
+
+          if (dirty.has(root)) {
+            const walker = doc.createTreeWalker(root, win.NodeFilter.SHOW_TEXT);
+            let offset = 0;
+            let first = 0;
+            for (let node = walker.nextNode(); node && first < stream.spans.length; node = walker.nextNode()) {
+              const end = offset + node.length;
+              while (first < stream.spans.length && stream.spans[first].end <= offset) first++;
+              for (let index = first; index < stream.spans.length && stream.spans[index].start < end; index++) {
+                const span = stream.spans[index];
+                if (span.end <= offset || end === offset
+                  || node.parentElement?.closest('pre, code, button, [aria-hidden="true"]')) continue;
+                stream.ranges.push({ time: span.time, range: new win.StaticRange({
+                  startContainer: node, endContainer: node,
+                  startOffset: Math.max(0, span.start - offset), endOffset: Math.min(node.length, span.end - offset),
+                }) });
+              }
+              offset = end;
+            }
+          }
+          stream.ranges = stream.ranges.filter(({ time }) => now - time < duration);
+          for (const { time, range } of stream.ranges) {
+            const age = now - time;
+            buckets[Math.floor(age / FADE_STEP_MS)].push(range);
+            nextPaint = Math.min(nextPaint, FADE_STEP_MS - age % FADE_STEP_MS);
+          }
+        }
+        dirty.clear();
+        for (const [index, ranges] of buckets.entries()) {
+          if (ranges.length) registry.set(names[index], new win.Highlight(...ranges));
+          else registry.delete(names[index]);
+        }
+        if (nextPaint !== Infinity) timer = win.setTimeout(paint, nextPaint);
+      }
+
+      function track(root, animate) {
+        if (!streams.has(root)) {
+          const text = animate ? '' : root.textContent;
+          streams.set(root, { text: text.length <= textLimit ? text : null, spans: [], ranges: [] });
+        }
+        if (animate) dirty.add(root);
+      }
+
+      const observer = new win.MutationObserver(records => {
+        let changed = false;
+        for (const record of records) {
+          const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+          const root = target?.closest(STREAM_SELECTOR);
+          if (root) track(root, true);
+          if (record.type === 'attributes' || (streams.size && record.removedNodes.length)) changed = true;
+          if (root || record.type !== 'childList') continue;
+          for (const node of record.addedNodes) {
+            if (node.nodeType !== 1) continue;
+            if (node.matches(STREAM_SELECTOR)) track(node, true);
+            for (const child of node.querySelectorAll(STREAM_SELECTOR)) track(child, true);
+          }
+        }
+        // Mutation observers run before the next paint. Register the new tone
+        // now so a fresh letter cannot flash at full contrast before fading in.
+        if (changed || dirty.size) paint();
+      });
+
+      function sync() {
+        observer.disconnect();
+        if (timer !== null) win.clearTimeout(timer);
+        timer = null;
+        streams.clear();
+        dirty.clear();
+        for (const name of names) registry.delete(name);
+        if (preference.matches || doc.hidden) return;
+        for (const root of doc.body.querySelectorAll(STREAM_SELECTOR)) track(root, false);
+        observer.observe(doc.body, { subtree: true, childList: true, characterData: true,
+          attributes: true, attributeFilter: ['data-streaming'] });
+      }
+
+      preference.addEventListener('change', sync);
+      doc.addEventListener('visibilitychange', sync);
+      sync();
+      return () => {
+        observer.disconnect();
+        if (timer !== null) win.clearTimeout(timer);
+        preference.removeEventListener('change', sync);
+        doc.removeEventListener('visibilitychange', sync);
+        for (const name of names) registry.delete(name);
+      };
+    }
+
     // ---------------------------------------------------------------------
     // Theme controller
     // ---------------------------------------------------------------------
@@ -569,10 +780,33 @@ window.__ModuleLoader__.load({
       let state = loadSaved();
       let disposer = null;
       let lastCount = 0;
-      let dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
+      let dom = { style: null, layer: null, media: null, mediaKey: '' };
       let disposed = false;
       let captionFill = null;
       let captionDrag = null;
+      let stopMotion = null;
+
+      const applyMotion = () => {
+        if (!state.motion) {
+          stopMotion?.();
+          stopMotion = null;
+          return;
+        }
+        if (stopMotion !== null || !document.body) return;
+        const body = document.body;
+        const style = document.createElement('style');
+        style.dataset.plugin = PLUGIN_ID;
+        style.dataset.pluginCss = `${PLUGIN_ID}/motion`;
+        style.textContent = MOTION_CSS;
+        document.head.appendChild(style);
+        body.setAttribute(MOTION_ATTR, '');
+        const stopReveal = observeStreamReveal(document, window);
+        stopMotion = () => {
+          stopReveal();
+          body.removeAttribute(MOTION_ATTR);
+          style.remove();
+        };
+      };
 
       const emit = () => {
         if (disposed) return;
@@ -599,7 +833,6 @@ window.__ModuleLoader__.load({
           try { dom.media.load(); } catch { /* noop */ }
         }
         if (dom.style !== null) dom.style.remove();
-        if (dom.svg !== null) dom.svg.remove();
         // B1: the wallpaper layer itself used to be left in the document on
         // every teardown, so repeated enable/disable accumulated duplicate
         // #dsh-custom-theme-backdrop nodes (and their media elements).
@@ -609,7 +842,7 @@ window.__ModuleLoader__.load({
           body.removeAttribute(BACKDROP_ATTR);
           body.removeAttribute(GLASS_ATTR);
         }
-        dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
+        dom = { style: null, layer: null, media: null, mediaKey: '' };
       };
 
       /**
@@ -643,14 +876,16 @@ window.__ModuleLoader__.load({
           dom.mediaKey = '';
         }
 
-        // Stylesheet can be replaced cheaply on every update.
-        if (dom.style !== null) dom.style.remove();
-        const style = document.createElement('style');
-        style.dataset.plugin = PLUGIN_ID;
-        style.dataset.pluginCss = `${PLUGIN_ID}/backdrop`;
-        style.textContent = css;
-        document.head.appendChild(style);
-        dom.style = style;
+        if (dom.style === null) {
+          const style = document.createElement('style');
+          style.dataset.plugin = PLUGIN_ID;
+          style.dataset.pluginCss = `${PLUGIN_ID}/backdrop`;
+          style.textContent = css;
+          document.head.appendChild(style);
+          dom.style = style;
+        } else if (dom.style.textContent !== css) {
+          dom.style.textContent = css;
+        }
 
         const needsCaptionDrag = bd.enabled === true && bd.source !== ''
           && document.documentElement.hasAttribute('data-windows-titlebar');
@@ -662,24 +897,6 @@ window.__ModuleLoader__.load({
         } else if (!needsCaptionDrag && captionDrag !== null) {
           captionDrag.remove();
           captionDrag = null;
-        }
-
-        // Only rebuild the SVG holder when its definition actually changed;
-        // removing a filter that is currently referenced makes the composer
-        // flash for one frame (and re-registers @property rules).
-        const svg = buildRefractionSvg(bd);
-        const svgKey = svg;
-        if (dom.svg !== null && dom.svgKey !== svgKey) {
-          dom.svg.remove();
-          dom.svg = null;
-        }
-        dom.svgKey = svgKey;
-        if (dom.svg === null && svg !== '') {
-          const holder = document.createElement('div');
-          holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
-          holder.innerHTML = svg;
-          body.appendChild(holder);
-          dom.svg = holder;
         }
 
         if (dom.layer === null && mediaInfo !== null) {
@@ -732,7 +949,7 @@ window.__ModuleLoader__.load({
        * colours and the wallpaper translucency share one override layer so a
        * single teardown removes everything.
        */
-      const reapply = () => {
+      const reapply = (prepared) => {
         clear();
         const theme = resolveTheme();
         if (theme === undefined) return { count: 0, warnings: [] };
@@ -740,7 +957,7 @@ window.__ModuleLoader__.load({
         const tokens = {};
         let warnings = [];
         if (state.enabled && state.css.trim() !== '') {
-          const built = buildOverrides(parseThemeInput(state.css), state.options);
+          const built = prepared ?? buildOverrides(parseThemeInput(state.css), state.options);
           Object.assign(tokens, built.tokens);
           warnings = built.warnings;
         }
@@ -769,9 +986,9 @@ window.__ModuleLoader__.load({
        * then skipped, which keeps the settings page from stalling a live
        * stream on every keystroke.
        */
-      const refresh = (tokensDirty = true) => {
+      const refresh = (tokensDirty = true, prepared) => {
         let warnings = [];
-        if (tokensDirty) warnings = reapply().warnings;
+        if (tokensDirty) warnings = reapply(prepared).warnings;
         applyDom();
         const bd = state.backdrop;
         if (bd.glass !== true) {
@@ -779,14 +996,11 @@ window.__ModuleLoader__.load({
           pointerGlass.disable();
         } else if (isLiteGlass(bd)) {
           // "流畅 / lite": the biggest win for low-end PCs. A static specular
-          // light needs zero pointer listeners and zero CSS-variable writes
+          // surface needs zero pointer listeners and zero CSS-variable writes
           // while the user types — only one shallow blur() remains.
           pointerGlass.disable();
         } else {
-          // "均衡 / balanced" repaints at most ~30 fps; "精细 / fine" and
-          // custom keep the original per-rAF path.
-          pointerGlass.configure(bd.glassPreset === 'fine' ? 0 : 32);
-          pointerGlass.enable(bd.glassPreset === 'fine' ? 0 : 32);
+          pointerGlass.enable(bd.performance ? 32 : 0, !bd.performance && bd.refract > 0);
         }
         return { count: lastCount, warnings };
       };
@@ -821,10 +1035,11 @@ window.__ModuleLoader__.load({
               && document.body !== null && typeof document.body.getAttribute === 'function'
               && document.body.getAttribute(GLASS_ATTR) === 'on',
             tokenCount: lastCount,
-            backdropFilterSupported: typeof CSS !== 'undefined'
-              && typeof CSS.supports === 'function'
-              ? CSS.supports('backdrop-filter', 'blur(1px)')
-                || CSS.supports('-webkit-backdrop-filter', 'blur(1px)')
+            motion: state.motion,
+            streamingFadeSupported: typeof window.Highlight === 'function' && !!window.CSS?.highlights,
+            backdropFilterSupported: typeof window.CSS?.supports === 'function'
+              ? window.CSS.supports('backdrop-filter', 'blur(1px)')
+                || window.CSS.supports('-webkit-backdrop-filter', 'blur(1px)')
               : null,
           };
         },
@@ -841,24 +1056,36 @@ window.__ModuleLoader__.load({
           // of resetting every other slider back to its default.
           let backdrop = prev.backdrop;
           if (patch.backdrop !== undefined) {
-            backdrop = normalizeBackdrop({ ...prev.backdrop, ...patch.backdrop }).backdrop;
+            const normalized = normalizeBackdrop({ ...prev.backdrop, ...patch.backdrop });
+            if (patch.backdrop.source !== undefined && normalized.sourceError !== null) {
+              return { count: lastCount, warnings: [], saveError: null, sourceError: normalized.sourceError };
+            }
+            backdrop = normalized.backdrop;
           }
-          state = { ...prev, ...patch, backdrop };
-          if (patch.options !== undefined) state.options = normalizeOptions(patch.options);
-          // Token writes are only needed when the theme CSS or its mapping
-          // options changed. Backdrop-only changes just replace the stylesheet.
+          const next = { ...prev, ...patch, backdrop };
+          if (patch.options !== undefined) next.options = normalizeOptions(patch.options);
+          let prepared;
+          if (patch.css !== undefined && next.enabled) {
+            prepared = buildOverrides(parseThemeInput(next.css), next.options);
+            if (Object.keys(prepared.tokens).length === 0) {
+              return { count: 0, warnings: prepared.warnings, saveError: null, rejected: true };
+            }
+          }
+          state = next;
+          const hasWallpaper = bd => bd.enabled && bd.source !== '';
+          // Shell transparency depends on the presence of active wallpaper.
+          // Sliders and valid-to-valid source changes need no token writes.
           const tokensDirty = patch.css !== undefined || patch.enabled !== undefined
-            || patch.options !== undefined || patch.reset === true;
-          const result = refresh(tokensDirty);
+            || patch.options !== undefined || hasWallpaper(prev.backdrop) !== hasWallpaper(backdrop);
+          if (prev.motion !== next.motion) applyMotion();
+          const result = refresh(tokensDirty, prepared);
           const saveError = persist();
           emit();
           return {
             count: result.count,
             warnings: result.warnings,
             saveError,
-            // Surface a rejected URL to the UI instead of silently clearing it.
-            sourceError: patch.backdrop !== undefined && patch.backdrop.source !== undefined
-              ? (normalizeBackdrop(patch.backdrop).sourceError ?? null) : null,
+            sourceError: null,
           };
         },
         /** Remove the theme colours (the wallpaper is an independent setting). */
@@ -873,6 +1100,7 @@ window.__ModuleLoader__.load({
         /** Stack the saved layer as soon as the plugin runs. */
         restore() {
           if (disposed) return 0;
+          applyMotion();
           const result = refresh(true);
           emit();
           return result.count;
@@ -882,6 +1110,7 @@ window.__ModuleLoader__.load({
           if (disposed) return;
           disposed = true;
           clear();
+          stopMotion?.();
           pointerGlass.disable();
           teardownDom();
           listeners.clear();
@@ -911,6 +1140,8 @@ window.__ModuleLoader__.load({
         const [draft, setDraft] = useState(() => controller.get().css);
         const [status, setStatus] = useState(null);
         const [showDetail, setShowDetail] = useState(false);
+        const [backdropStatus, setBackdropStatus] = useState(null);
+        const [urlDraft, setUrlDraft] = useState(null);
 
         // Re-render when the controller changes state anywhere else.
         useEffect(() => controller.subscribe(() => bump(value => value + 1)), [controller]);
@@ -932,7 +1163,7 @@ window.__ModuleLoader__.load({
             return;
           }
           const result = controller.update({ css: draft, name: '', enabled: true });
-          if (result.count === 0) {
+          if (result.rejected || result.count === 0) {
             setStatus({ kind: 'err', text: t('status.nothing') });
             return;
           }
@@ -983,33 +1214,29 @@ window.__ModuleLoader__.load({
           'performance',
         ]);
 
-        const setBackdrop = useCallback((key, value) => {
-          // Hand-editing a glass number (slider or dropdown) means the numbers
-          // no longer match a named look. Wallpaper sliders are independent.
-          const patch = { [key]: value };
-          if (GLASS_KEYS.has(key)) patch.glassPreset = 'custom';
+        const updateBackdrop = useCallback((patch) => {
           const result = controller.update({ backdrop: patch });
           if (result.saveError !== null) {
-            setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
+            setBackdropStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
           } else if (result.sourceError !== null && result.sourceError !== undefined) {
-            setStatus({ kind: 'err', text: t('bg.errUrl').replace('{reason}', result.sourceError) });
+            setBackdropStatus({ kind: 'err', text: t('bg.errUrl').replace('{reason}', result.sourceError) });
+          } else {
+            setBackdropStatus(null);
+            return true;
           }
+          return false;
         }, [controller, t]);
+
+        const setBackdrop = (key, value) => updateBackdrop(GLASS_KEYS.has(key)
+          ? { [key]: value, glassPreset: 'custom' } : { [key]: value });
 
         /** Apply a whole named glass look in one controller update. */
         const setGlassPreset = useCallback((id) => {
           const values = GLASS_PRESETS[id];
-          const result = controller.update({
-            backdrop: values === undefined
-              ? { glassPreset: 'custom' }
-              : { ...values, glassPreset: id },
-          });
-          if (result.saveError !== null) {
-            setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
-          } else if (values !== undefined) {
-            setStatus({ kind: 'ok', text: t('bg.presetApplied') });
+          if (updateBackdrop({ ...values, glassPreset: id }) && values !== undefined) {
+            setBackdropStatus({ kind: 'ok', text: t('bg.presetApplied') });
           }
-        }, [controller, t]);
+        }, [updateBackdrop, t]);
 
         const bd = state.backdrop;
 
@@ -1064,23 +1291,16 @@ window.__ModuleLoader__.load({
           const file = event.target.files?.[0];
           if (file === undefined) return;
           if (!/^image\/(png|jpe?g|webp|gif|avif|bmp)$/i.test(file.type)) {
-            setStatus({ kind: 'err', text: t('bg.errImageOnly') });
+            setBackdropStatus({ kind: 'err', text: t('bg.errImageOnly') });
             return;
           }
           const reader = new FileReader();
-          reader.onerror = () => setStatus({ kind: 'err', text: t('bg.errRead') });
+          reader.onerror = () => setBackdropStatus({ kind: 'err', text: t('bg.errRead') });
           reader.onload = () => {
             if (typeof reader.result !== 'string') return;
             const img = new Image();
             img.onerror = () => {
-              // Some formats (AVIF) may not decode in every Electron build;
-              // fall back to the raw data URL and let the validator decide.
-              if (reader.result.length <= MAX_DATA_URL_BYTES) {
-                setBackdrop('source', reader.result);
-                setStatus({ kind: 'ok', text: t('bg.pickOk') });
-              } else {
-                setStatus({ kind: 'err', text: t('bg.errTooLarge') });
-              }
+              setBackdropStatus({ kind: 'err', text: t('bg.errRead') });
             };
             img.onload = () => {
               try {
@@ -1095,19 +1315,21 @@ window.__ModuleLoader__.load({
                 let out = canvas.toDataURL('image/jpeg', 0.82);
                 if (out.length > MAX_DATA_URL_BYTES) out = canvas.toDataURL('image/jpeg', 0.6);
                 if (out.length > MAX_DATA_URL_BYTES) {
-                  setStatus({ kind: 'err', text: t('bg.errTooLarge') });
+                  setBackdropStatus({ kind: 'err', text: t('bg.errTooLarge') });
                   return;
                 }
-                setBackdrop('source', out);
-                setStatus({ kind: 'ok', text: t('bg.pickOk') });
+                if (updateBackdrop({ kind: 'image', source: out })) {
+                  setUrlDraft(null);
+                  setBackdropStatus({ kind: 'ok', text: t('bg.pickOk') });
+                }
               } catch (error) {
-                setStatus({ kind: 'err', text: `${t('bg.errRead')}: ${String(error)}` });
+                setBackdropStatus({ kind: 'err', text: `${t('bg.errRead')}: ${String(error)}` });
               }
             };
             img.src = reader.result;
           };
           reader.readAsDataURL(file);
-        }, [setBackdrop, t]);
+        }, [updateBackdrop, t]);
 
         const detail = useMemo(() => {
           if (appliedParsed === null) return null;
@@ -1161,6 +1383,21 @@ window.__ModuleLoader__.load({
             h('div', { className: 'cctHint', key: 'rule' }, t('intro.rule')),
           ]),
 
+          h('div', { className: 'cctCard', key: 'motion' }, [
+            h('label', { key: 'toggle', className: 'cctCheck' }, [
+              h('input', {
+                key: 'input', type: 'checkbox', checked: state.motion,
+                onChange: event => {
+                  const { saveError } = controller.update({ motion: event.target.checked });
+                  setStatus(saveError === null ? null
+                    : { kind: 'err', text: `${t('status.saveFailed')}: ${saveError}` });
+                },
+              }),
+              t('motion.enable'),
+            ]),
+            h('div', { key: 'hint', className: 'cctHint' }, t('motion.hint')),
+          ]),
+
           // ---- Wallpaper + liquid glass ------------------------------------
           h('div', { className: 'cctCard', key: 'backdrop' }, [
             h('div', { className: 'cctTitle', key: 'title' }, t('bg.title')),
@@ -1188,9 +1425,15 @@ window.__ModuleLoader__.load({
 
             h('input', {
               key: 'url', className: 'cctInputSmall', type: 'text',
-              value: bd.source, placeholder: t('bg.urlPlaceholder'),
+              value: urlDraft ?? (bd.source.startsWith('data:') ? '' : bd.source),
+              placeholder: t(bd.source.startsWith('data:') ? 'bg.localImage' : 'bg.urlPlaceholder'),
+              'aria-label': t('bg.urlPlaceholder'),
               spellCheck: false,
-              onChange: event => setBackdrop('source', event.target.value),
+              onChange: event => setUrlDraft(event.target.value),
+              onBlur: () => {
+                if (urlDraft !== null && setBackdrop('source', urlDraft)) setUrlDraft(null);
+              },
+              onKeyDown: event => { if (event.key === 'Enter') event.currentTarget.blur(); },
             }),
             h('div', { className: 'cctRow', key: 'filerow' }, [
               h('label', { key: 'f', className: 'cctButton', htmlFor: 'cct-bg-file' }, t('bg.pickFile')),
@@ -1204,9 +1447,13 @@ window.__ModuleLoader__.load({
               }),
               h('button', {
                 key: 'clear', type: 'button', className: 'cctButton',
-                onClick: () => setBackdrop('source', ''),
+                onClick: () => { setUrlDraft(null); setBackdrop('source', ''); },
               }, t('bg.clear')),
             ]),
+            backdropStatus === null ? null : h('div', {
+              key: 'bgStatus', role: 'status',
+              className: `cctStatus ${backdropStatus.kind === 'ok' ? 'cctStatusOk' : 'cctStatusErr'}`,
+            }, backdropStatus.text),
             h('div', { className: 'cctHint', key: 'sec' }, t('bg.security')),
 
             slider('blur', t('bg.blur'), 0, 40, 1, 'px'),

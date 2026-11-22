@@ -24,6 +24,10 @@ window.__ModuleLoader__.load({
     const NAMESPACE = 'custom-theme';
     const STORAGE_KEY = 'dsh-custom-theme/v1';
     const TOKEN_PREFIX = '--dsw-';
+    const MOTION_ATTR = 'data-dsh-custom-theme-motion';
+    const STREAM_SELECTOR = 'div[data-streaming]';
+    const FADE_STEPS = [48, 65, 80, 92];
+    const FADE_STEP_MS = 36;
 
     // ---------------------------------------------------------------------
     // Theme core (generated from src/core.js by scripts/build.mjs).
@@ -1937,10 +1941,10 @@ function describeOverrides(tokens) {
  *
  *   - a full-window wallpaper (image or video) with optional blur + scrim,
  *   - optional liquid glass on the composer input, with adjustable opacity,
- *     blur, saturation, radius, edge highlight and refraction.
+ *     blur, saturation, radius, edge highlight and water lighting.
  *
- * DOM-free: the functions below return CSS text, an SVG filter definition, a
- * media descriptor and token overrides. `src/client.template.js` performs the
+ * DOM-free: the functions below return CSS text, a media descriptor and
+ * token overrides. `src/client.template.js` performs the
  * actual DOM writes, so all of this is unit-testable in plain Node.
  *
  * Security: a pasted URL is never interpolated into CSS — it is validated and
@@ -1988,11 +1992,8 @@ const DEFAULT_BACKDROP = Object.freeze({
   glassRadius: 20,            // 0..32 px
   glassHighlight: 55,         // edge highlight, 0..80 %
   glassShadow: 30,            // outer shadow, 0..60 %
-  refract: 0,                 // 0..24, 0 = off. The SVG displacement path is
-                              // intentionally NOT wired onto the composer (it
-                              // breaks position:fixed popovers); >0 only emits
-                              // a decorative-layer-only filter definition.
-  refractFrequency: 15,       // 5..30 → baseFrequency 0.005..0.030
+  refract: 6,                 // 0..24, strength of the water-light pattern
+  refractFrequency: 15,       // 5..30, controls how tightly the press ripple tapers
   performance: false,         // lite mode: no refraction, no shimmer, shallow blur
   reducedMotion: true,        // pause the video when the OS asks
   glassPreset: 'balanced',    // 'lite' | 'balanced' | 'fine' | 'custom'
@@ -2037,7 +2038,7 @@ const GLASS_PRESETS = Object.freeze({
     // "balanced" rather than "custom".
     performance: false, glassOpacity: 14, glassBlur: 10, glassSaturate: 180,
     glassRadius: 20, glassHighlight: 55, glassShadow: 30,
-    refract: 0, refractFrequency: 15,
+    refract: DEFAULT_BACKDROP.refract, refractFrequency: 15,
   }),
   fine: Object.freeze({
     performance: false, glassOpacity: 10, glassBlur: 14, glassSaturate: 190,
@@ -2048,7 +2049,7 @@ const GLASS_PRESETS = Object.freeze({
 
 /**
  * Whether the cheap glass recipe is active. Kept in one place so the CSS, the
- * SVG refraction and the pointer tracker agree on the same switch.
+ * water lighting and the pointer tracker agree on the same switch.
  */
 function isLiteGlass(backdrop) {
   return backdrop.glassPreset === 'lite';
@@ -2142,8 +2143,11 @@ function normalizeBackdrop(raw) {
     glassPreset: ['lite', 'balanced', 'fine', 'custom'].includes(input.glassPreset)
       ? input.glassPreset : DEFAULT_BACKDROP.glassPreset,
   };
-  // Keep the label honest when a stored profile has custom numbers but still
-  // carries a named preset from an older build.
+  if (input.glassPreset === 'balanced' && backdrop.refract === 0
+    && matchGlassPreset({ ...backdrop, refract: DEFAULT_BACKDROP.refract }) === 'balanced') {
+    backdrop.refract = DEFAULT_BACKDROP.refract;
+  }
+  // Keep custom settings, including a deliberate zero for water lighting.
   backdrop.glassPreset = input.glassPreset === 'custom' ? 'custom' : matchGlassPreset(backdrop);
   return { backdrop, sourceError: checked.ok ? null : checked.reason };
 }
@@ -2348,19 +2352,8 @@ html[data-windows-titlebar] body [id^="dsh-pet-baifan"] * {
  * Liquid glass on DSH's composer frame (`[data-composer-card]`, a stable
  * attribute — CSS-module class names are hashed and must not be targeted).
  *
- * Recipe: translucent tinted surface + `blur · saturate · brightness · contrast`
- * backdrop filter, a 1px specular edge, an inset top highlight, chromatic edge
- * shadows (colour dispersion without a pseudo-element, because DSH already uses
- * `::after` on one card variant), and a separate `::before` specular line.
- *
- * Deliberately does NOT use an SVG `filter: url(...)` on the composer: a filter
- * creates a new containing block, which re-anchors the card's `position:fixed`
- * popovers (@mention, attachment preview, emoji, tooltip) and clips their
- * overflow. `isolation: isolate` is likewise omitted (it adds a stacking
- * context for no benefit here). No `!important` on background/border: those
- * would override DSH's `:focus-visible`, `[data-error]` and drag-highlight
- * states. A higher-specificity selector on the decoration-only properties is
- * used where the host must be won over.
+ * The frosted backing holds its shape. A second layer paints the moving light
+ * separately, so pointer motion cannot displace the outline or the controls.
  *
  * @param backdrop - normalised backdrop.
  * @returns CSS text.
@@ -2376,73 +2369,87 @@ function buildGlassCss(backdrop) {
   const hi = num(backdrop.glassHighlight / 100);
   const sh = num(backdrop.glassShadow / 100);
   const radius = backdrop.glassRadius;
+  const card = `body[${GLASS_ATTR}="on"] [data-composer-card]`;
+  const surface = `${card}:where(:not([data-error], [aria-invalid="true"], [data-dragging]))`;
+  // The native workspace picker uses ::after for its own dashed outline.
+  const lightSurface = `${surface}:where(:not([class*="_cardWorkspaceTrigger"]))`;
+  const water = !lite && !backdrop.performance ? backdrop.refract / 24 : 0;
+  const rippleFeather = Math.round(27 - backdrop.refractFrequency * 0.46);
   const filter = lite
     ? `blur(${blur}px)`
     : `blur(${blur}px) saturate(${sat}) brightness(${num(1.05)}) contrast(${num(1.1)})`;
   const transition = lite
     ? 'transition: none;'
-    : `transition: --glass-glow 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-                 box-shadow 0.2s ease-out;`;
+    : 'transition: --glass-glow 180ms cubic-bezier(0.22, 1, 0.36, 1);';
 
   return `
 /* ---- Pointer state. Only the INTENSITY is interpolated; position variables
    must never be transitioned (Google's interactive-content-reveal guide:
    animating position produces a lagging trail). ---- */
 @property --glass-glow { syntax: '<number>'; inherits: false; initial-value: 0; }
+${water > 0 ? `@property --glass-ripple-size { syntax: '<length>'; inherits: true; initial-value: 0px; }
+@property --glass-ripple-alpha { syntax: '<number>'; inherits: true; initial-value: 0; }
+@property --glass-light-scale { syntax: '<number>'; inherits: true; initial-value: 1; }` : ''}
 
 @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  /* State-safe base selector: the resting decoration only applies while the
-     composer is NOT focused and carries no error/highlight state, so DSH's
-     :focus-visible border, [data-error] and drag highlight always win. */
-  body[${GLASS_ATTR}="on"] [data-composer-card]:not(:focus-within):not([data-error]) {
-    /* All decoration lives in the element's own background layers: no
-       pseudo-elements, no child selectors, and — crucially — NO transform or
-       scale and NO SVG filter (a filter would re-anchor position:fixed
-       popovers). Scaling the composer itself squeezed the whole page
-       (reported by the user); high-star implementations (smoothui, Twilight
-       Echo) move only the highlight, never the element. */
+  ${surface} {
+    /* Keep the material present while typing. The native border and focus
+       shadow still take over when a control inside the card has focus. */
     position: relative;
-    --glass-x: 50%;
-    --glass-y: 0%;
-    --glass-ang: 135deg;
-    --glass-glow: 0.35;
-    background:
-      /* 1. Pointer-following specular hotspot — soft, WHITE, single layer.
-         smoothui: radial-gradient(closest-side, .3, .07@48%, transparent@74%). */
-      radial-gradient(circle 260px at var(--glass-x) var(--glass-y),
-        rgba(255,255,255,calc(0.04 + var(--glass-glow) * 0.26)) 0%,
-        rgba(255,255,255,calc(0.02 + var(--glass-glow) * 0.06)) 48%,
-        transparent 74%),
-      /* 2. A restrained specular sweep whose angle follows the cursor
-         (rdev / Twilight Echo: 135 + offsetX * 1.2 deg). */
-      linear-gradient(var(--glass-ang),
-        transparent 30%,
-        rgba(255,255,255,calc(var(--glass-glow) * 0.10)) 50%,
-        transparent 70%),
-      /* 3. Static 1px top specular line (Z1Code). */
-      linear-gradient(90deg, transparent 8%, rgba(255,255,255,${num(Math.min(0.7, hi + 0.15))}) 50%, transparent 92%) top / 100% 1px no-repeat,
-      /* 4. Soft overhead light. */
-      linear-gradient(180deg, rgba(255,255,255,${num(hi * 0.12)}) 0%, transparent 38%);
-    /* The tinted surface is a colour, not an image: it goes in
-       background-color AFTER the shorthand (which resets it). */
-    background-color: color-mix(in srgb, var(--dsw-specific-input-major, #202024) ${Math.round(alpha * 100)}%, transparent);
-    background-repeat: no-repeat;
-    -webkit-backdrop-filter: ${filter};
-    backdrop-filter: ${filter};
+    isolation: isolate;
+    background: transparent;
     border-radius: ${radius}px;
-    border: 1px solid rgba(255,255,255,${num(hi * 0.6)});
-    box-shadow:
-      0 8px 32px rgba(0,0,0,${sh}),
-      inset 0 1px 0 rgba(255,255,255,${num(Math.max(0.1, hi * 0.35))}),
-      inset  2px  2px 1px -1px rgba(255,255,255,${num(hi * 0.6)}),
-      inset -2px -2px 1px -1px rgba(255,255,255,${num(hi * 0.35)});
+    --glass-x: 50%;
+    --glass-y: 16%;
+    --glass-glow: 0.28;
     ${transition}
   }
-  /* Hover only brightens the light — no size change, no layout shift. */
-  body[${GLASS_ATTR}="on"] [data-composer-card]:hover { --glass-glow: 1; }
+  ${surface}::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    pointer-events: none;
+    background-image: linear-gradient(180deg, rgba(255,255,255,${num(hi * 0.14)}), transparent 66%);
+    background-color: color-mix(in srgb, var(--dsw-specific-input-major, #202024) ${Math.round(alpha * 100)}%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,${num(hi * 0.32)}),
+      inset 0 1px 0 rgba(255,255,255,${num(hi * 0.35)}),
+      inset 0 -1px 0 rgba(0,0,0,${num(hi * 0.22)});
+    -webkit-backdrop-filter: ${filter};
+    backdrop-filter: ${filter};
+  }
+  ${lite ? '' : `${lightSurface}::after {
+    content: "";
+    position: absolute;
+    inset: 2px;
+    z-index: -1;
+    border-radius: max(0px, ${radius - 2}px);
+    pointer-events: none;
+    --glass-glow: inherit;
+    opacity: max(var(--glass-glow), var(--glass-ripple-alpha, 0));
+    ${water > 0 ? 'scale: var(--glass-light-scale) 1;' : ''}
+    background-image:
+      ${water > 0 ? `radial-gradient(circle at var(--glass-press-x, 50%) var(--glass-press-y, 50%),
+        transparent max(0px, calc(var(--glass-ripple-size) - ${rippleFeather}px)),
+        rgb(255 255 255 / calc(var(--glass-ripple-alpha) * ${num(0.10 + 0.30 * water)})) var(--glass-ripple-size),
+        transparent calc(var(--glass-ripple-size) + ${rippleFeather}px)),` : ''}
+      radial-gradient(ellipse 240px 26px at var(--glass-x) -4px,
+        rgb(255 255 255 / ${num(hi * 0.38)}) 0%, rgb(255 255 255 / ${num(hi * 0.11)}) 52%, transparent 100%),
+      radial-gradient(ellipse 188px 68px at var(--glass-x) var(--glass-y),
+        rgb(255 255 255 / ${num(hi * 0.11)}) 0%, transparent 100%);
+  }`}
+  ${surface}:not(:focus-within) {
+    border-color: rgba(255,255,255,${num(hi * 0.6)});
+    box-shadow:
+      0 8px 32px rgba(0,0,0,${sh}),
+      0 2px 8px rgba(0,0,0,${num(sh * 0.38)});
+  }
+  ${surface}:focus-within { --glass-glow: 0.52; }
+  ${lite ? '' : `${surface}:hover { --glass-glow: 1; }`}
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  body[${GLASS_ATTR}="on"] [data-composer-card]:not(:focus-within):not([data-error]) {
+  ${surface} {
     background: color-mix(in srgb, var(--dsw-specific-input-major, #202024) 92%, transparent);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -2450,19 +2457,24 @@ function buildGlassCss(backdrop) {
 }
 /* Touch / reduced-motion: fixed light source, no tracking, no transition.
    smoothui and Twilight Echo both keep the GLASS but freeze the motion. */
-@media (pointer: coarse), (prefers-reduced-motion: reduce) {
-  body[${GLASS_ATTR}="on"] [data-composer-card] {
-    --glass-glow: 0.35;
+@media (any-pointer: coarse) and (not (any-pointer: fine)), (prefers-reduced-motion: reduce) {
+  ${surface}, ${surface}:hover, ${surface}:focus-within {
+    --glass-glow: 0.28;
     transition: none;
   }
 }
-@media (prefers-reduced-transparency: reduce) {
-  body[${GLASS_ATTR}="on"] [data-composer-card] {
+${water > 0 ? `@media (prefers-reduced-motion: reduce) {
+  ${lightSurface}::after { scale: none; }
+}` : ''}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  ${surface} {
     background: var(--dsw-specific-input-major, #202024);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
     filter: none;
   }
+  ${surface}::before { content: none; }
+  ${lite ? '' : `${lightSurface}::after { content: none; }`}
 }
 `;
 }
@@ -2471,7 +2483,6 @@ function buildGlassCss(backdrop) {
  * Compute the pointer-driven CSS variable values for one glass element.
  *
  * Pure function — no DOM. Adapted from high-star, production implementations:
- *   - rdev/liquid-glass-react (6640★): `135 + offsetX * 1.2` degree highlight.
  *   - Twilight Echo (424★, real Electron app): `MAX_ELASTIC_SHIFT_PX = 10`,
  *     "elastic shifts beyond 10px push neighbouring layout" — so the pointer
  *     may nudge the HIGHLIGHT by at most 10px, never the element itself.
@@ -2497,10 +2508,6 @@ function pointerGlassVars(event, rect, options = {}) {
   const px = Math.min(100, Math.max(0, ((event.clientX - left) / w) * 100));
   const py = Math.min(100, Math.max(0, ((event.clientY - top) / h) * 100));
 
-  // Specular sweep angle follows the cursor (rdev / Twilight Echo).
-  const offsetX = ((event.clientX - cx) / w) * 100;
-  const angle = 135 + offsetX * 1.2;
-
   // A tiny elastic nudge of the light, clamped to `shift` px. This is the
   // "liquid" give; the element and its layout never move.
   const ex = Math.max(-shift, Math.min(shift, (event.clientX - cx) * 0.012));
@@ -2512,7 +2519,6 @@ function pointerGlassVars(event, rect, options = {}) {
   return {
     '--glass-x': signed(px, ex),
     '--glass-y': signed(py, ey),
-    '--glass-ang': `${num(angle)}deg`,
   };
 }
 
@@ -2520,43 +2526,8 @@ function pointerGlassVars(event, rect, options = {}) {
 function restingGlassVars() {
   return {
     '--glass-x': '50%',
-    '--glass-y': '0%',
-    '--glass-ang': '135deg',
+    '--glass-y': '16%',
   };
-}
-
-/**
- * SVG displacement filter definition for the refraction effect.
- *
- * Kept as a public export (the client half still calls it) and still emitted
- * when a user EXPLICITLY opts in with `glass:true` and `refract>0`. However it
- * is deliberately a decoration-only definition: the composer CSS no longer
- * references `url(#dsh-glass-refract)`. Applying an SVG filter to
- * `[data-composer-card]` created a new containing block that re-anchored its
- * `position:fixed` popovers and clipped their overflow, so that path has been
- * removed. The frosted `backdrop-filter` look is retained without it.
- *
- * Returns '' whenever glass is off, refraction is 0 (the new default), or
- * performance mode is on.
- *
- * @param backdrop - normalised backdrop.
- * @returns an `<svg>` string, or '' when refraction is off.
- */
-function buildRefractionSvg(backdrop) {
-  // Explicit opt-in only; default refract is now 0 so a fresh profile never
-  // builds this SVG. The filter is never applied to the composer itself.
-  const scale = backdrop.glass === true && !backdrop.performance ? backdrop.refract : 0;
-  if (scale <= 0) return '';
-  const freq = (backdrop.refractFrequency / 1000).toFixed(3);
-  return `<svg width="0" height="0" aria-hidden="true" style="position:absolute" xmlns="http://www.w3.org/2000/svg"><defs>
-  <filter id="dsh-glass-refract" x="-5%" y="-5%" width="110%" height="110%" color-interpolation-filters="sRGB">
-    <feGaussianBlur in="SourceGraphic" stdDeviation="0.3" result="preblur"/>
-    <feTurbulence type="fractalNoise" baseFrequency="${freq} ${freq}" numOctaves="2" seed="42" result="noise"/>
-    <feGaussianBlur in="noise" stdDeviation="3" result="smooth"/>
-    <feDisplacementMap in="preblur" in2="smooth" scale="${scale}" xChannelSelector="R" yChannelSelector="G" result="displaced"/>
-    <feColorMatrix in="displaced" type="saturate" values="1.3"/>
-  </filter>
-</defs></svg>`;
 }
 
 /**
@@ -2694,6 +2665,8 @@ const DICTIONARIES = {
     'intro.hint1': '在',
     'intro.hint2': '挑选或调好一套主题，点「复制主题 / Copy theme」把 CSS 粘贴到下面即可。',
     'intro.rule': '只会读取 CSS 变量声明（--primary: … 这种），并映射到 Harness 自己的设计令牌；选择器、@apply 等规则一律忽略，粘贴内容不会作为样式表插入页面。',
+    'motion.enable': '流式回复与交互动效',
+    'motion.hint': '回复的新文字短暂淡入，输入框按钮有悬停和按压反馈。跟随系统的减少动态效果设置。',
     'paste.title': '主题 CSS',
     'paste.placeholder': ':root {\n  --background: oklch(0.98 0.004 95);\n  --primary: oklch(0.62 0.14 39);\n  …\n}\n\n.dark {\n  --background: oklch(0.29 0 0);\n  --primary: oklch(0.76 0 0);\n  …\n}',
     'paste.apply': '应用主题',
@@ -2720,7 +2693,8 @@ const DICTIONARIES = {
     'bg.kindVideo': '视频',
     'bg.fitCover': '铺满裁切',
     'bg.fitContain': '完整显示',
-    'bg.urlPlaceholder': 'https://…/wallpaper.jpg（或点下面的按钮选本地图片）',
+    'bg.urlPlaceholder': '粘贴背景链接，按 Enter 应用',
+    'bg.localImage': '正在使用本地图片',
     'bg.pickFile': '选择本地图片',
     'bg.clear': '清除地址',
     'bg.security': '只允许 http(s) 链接或本地图片（转成内置数据）；SVG、脚本链接、超大文件会被拒绝。视频请用链接，本地视频不入库。',
@@ -2730,14 +2704,14 @@ const DICTIONARIES = {
     'bg.tintClear': '清除着色',
     'bg.tintStrength': '着色强度',
     'bg.glass': '输入框液态玻璃',
-    'bg.glassHint': '作用于对话输入框（不是从 tweakcn 粘贴的主题）。每个参数既可用下拉选档，也可拖滑块，两者联动。配方参考 kevinbism/liquid-glass-effect、Z1Code/glass-refraction、shuding/liquid-glass。',
+    'bg.glassHint': '作用于对话输入框。「均衡」和「精细」档的高光会跟随鼠标，按下时从点击处荡开一圈水波。',
     'bg.stepSelect': '选择档位',
     'bg.stepCustom': '自定义',
     'bg.glassPreset': '玻璃档位',
     'bg.glassPresetLite': '流畅（推荐 · 低配不卡）',
     'bg.glassPresetBalanced': '均衡',
     'bg.glassPresetFine': '精细（高配）',
-    'bg.glassPresetHint': '掉帧就选「流畅」：单层浅模糊、无折射、关闭指针跟随。',
+    'bg.glassPresetHint': '「流畅」使用静态玻璃。选「均衡」或「精细」即可看到跟随鼠标的水纹。',
     'bg.presetApplied': '已应用玻璃档位。',
     'bg.glassOpacity': '玻璃实色占比（越低越透）',
     'bg.glassBlur': '玻璃模糊',
@@ -2745,11 +2719,11 @@ const DICTIONARIES = {
     'bg.glassRadius': '玻璃圆角',
     'bg.glassHighlight': '边缘高光',
     'bg.glassShadow': '立体阴影',
-    'bg.refract': '液态折射强度（0 关闭）',
-    'bg.refractFrequency': '折射纹理频率',
-    'bg.performance': '性能模式（关闭折射、限制模糊）',
+    'bg.refract': '水纹强度（0 关闭）',
+    'bg.refractFrequency': '点击水波收边（越高越窄）',
+    'bg.performance': '性能模式（关闭水纹、限制模糊）',
     'bg.reducedMotion': '跟随系统「减少动态效果」暂停视频',
-    'bg.perfHint': '掉帧优先选上面的「流畅」档：单层浅模糊、无折射、关闭指针高光跟随，均衡档还会把重绘限制在约 30fps。视频解码和 SVG 折射也很吃性能。系统开启「减少透明效果」时玻璃会自动降级为不透明。',
+    'bg.perfHint': '系统开启「减少动态效果」时会停止高光跟随，开启「减少透明效果」时会使用实色背景。',
     'bg.errImageOnly': '只能选择图片文件。',
     'bg.errTooLarge': '图片太大，无法保存。请换一张小图，或改用图片链接。',
     'bg.errRead': '读取图片失败。',
@@ -2774,6 +2748,8 @@ const DICTIONARIES = {
     'intro.hint1': 'Pick or tune a theme on',
     'intro.hint2': 'then click “Copy theme” and paste the CSS below.',
     'intro.rule': 'Only CSS variable declarations (--primary: …) are read and mapped onto the Harness design tokens; selectors and @apply rules are ignored and the paste is never inserted as a stylesheet.',
+    'motion.enable': 'Streaming and interaction effects',
+    'motion.hint': 'New reply text fades in briefly. Composer buttons respond to hover and press. Follows the system reduced-motion preference.',
     'paste.title': 'Theme CSS',
     'paste.placeholder': ':root {\n  --background: oklch(0.98 0.004 95);\n  --primary: oklch(0.62 0.14 39);\n  …\n}\n\n.dark {\n  --background: oklch(0.29 0 0);\n  --primary: oklch(0.76 0 0);\n  …\n}',
     'paste.apply': 'Apply theme',
@@ -2800,7 +2776,8 @@ const DICTIONARIES = {
     'bg.kindVideo': 'Video',
     'bg.fitCover': 'Cover',
     'bg.fitContain': 'Contain',
-    'bg.urlPlaceholder': 'https://…/wallpaper.jpg (or pick a local image below)',
+    'bg.urlPlaceholder': 'Paste a wallpaper URL and press Enter',
+    'bg.localImage': 'Using a local image',
     'bg.pickFile': 'Choose a local image',
     'bg.clear': 'Clear URL',
     'bg.security': 'Only http(s) URLs or local images (stored as inline data) are allowed; SVG, script URLs and oversized files are refused. Use a URL for video — local video files are not stored.',
@@ -2810,14 +2787,14 @@ const DICTIONARIES = {
     'bg.tintClear': 'Clear cast',
     'bg.tintStrength': 'Cast strength',
     'bg.glass': 'Liquid glass on the composer',
-    'bg.glassHint': 'Applies to the chat input, not the pasted tweakcn theme. Every parameter has both a dropdown and a slider; the two stay in sync. Recipe adapted from kevinbism/liquid-glass-effect, Z1Code/glass-refraction and shuding/liquid-glass.',
+    'bg.glassHint': 'Balanced and Fine add a highlight that follows the pointer and a water ripple that starts where you press the composer.',
     'bg.stepSelect': 'Choose a step',
     'bg.stepCustom': 'Custom',
     'bg.glassPreset': 'Glass quality',
     'bg.glassPresetLite': 'Smooth (recommended · no lag)',
     'bg.glassPresetBalanced': 'Balanced',
     'bg.glassPresetFine': 'Fine (high-end)',
-    'bg.glassPresetHint': 'If it stutters, pick "Smooth": one shallow blur, no refraction, no pointer tracking.',
+    'bg.glassPresetHint': 'Smooth keeps the glass static. Choose Balanced or Fine for pointer-following water highlights.',
     'bg.presetApplied': 'Glass quality applied.',
     'bg.glassOpacity': 'Glass solidity (lower = clearer)',
     'bg.glassBlur': 'Glass blur',
@@ -2825,11 +2802,11 @@ const DICTIONARIES = {
     'bg.glassRadius': 'Glass radius',
     'bg.glassHighlight': 'Edge highlight',
     'bg.glassShadow': 'Depth shadow',
-    'bg.refract': 'Liquid refraction (0 = off)',
-    'bg.refractFrequency': 'Refraction texture scale',
-    'bg.performance': 'Performance mode (no refraction, capped blur)',
+    'bg.refract': 'Water highlight strength (0 = off)',
+    'bg.refractFrequency': 'Ripple sharpness (higher = narrower)',
+    'bg.performance': 'Performance mode (water effects off, capped blur)',
     'bg.reducedMotion': 'Pause the video when the OS asks for reduced motion',
-    'bg.perfHint': 'If it stutters, pick the "Smooth" quality above: one shallow blur, no refraction, no pointer-tracking repaints; "Balanced" also caps repaints at ~30 fps. Video decoding and SVG refraction are expensive too. The glass degrades to opaque when the OS asks for reduced transparency.',
+    'bg.perfHint': 'The system reduced-motion setting stops pointer tracking. The reduced-transparency setting uses a solid background.',
     'bg.errImageOnly': 'Only image files can be chosen.',
     'bg.errTooLarge': 'The image is too large to save. Use a smaller one or an image URL.',
     'bg.errRead': 'Could not read the image.',
@@ -2902,6 +2879,7 @@ const DICTIONARIES = {
     function loadSaved() {
       const fallback = {
         css: '', name: '', enabled: false,
+        motion: false,
         options: { ...DEFAULT_OPTIONS },
         backdrop: { ...DEFAULT_BACKDROP },
       };
@@ -2933,6 +2911,7 @@ const DICTIONARIES = {
           css: typeof parsed.css === 'string' ? parsed.css : '',
           name: typeof parsed.name === 'string' ? parsed.name : '',
           enabled: parsed.enabled === true,
+          motion: parsed.motion === true,
           options,
           backdrop: normalizeBackdrop(parsed.backdrop).backdrop,
         };
@@ -2963,7 +2942,7 @@ const DICTIONARIES = {
      */
     function save(state) {
       try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, fontsMigrationV2: true }));
         return null;
       } catch (error) {
         return error instanceof Error ? error.message : String(error);
@@ -3140,6 +3119,13 @@ const DICTIONARIES = {
   overflow: auto;
 }
 .cctDivider { height: 0.5px; background: var(--dsw-alias-border-l1); }
+@media (max-width: 640px) {
+  .cctSliderRow { grid-template-columns: minmax(0, 1fr) 85px; }
+  .cctSliderValue { text-align: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cctButton { transition: none; }
+}
 `;
 
     // ---------------------------------------------------------------------
@@ -3154,7 +3140,7 @@ const DICTIONARIES = {
      *     `pointerover/pointerout` pair stays resident; the high-frequency
      *     `pointermove` is attached only while the pointer is over the card.
      *     Frames are coalesced (latest-wins) and capped at ~32ms so a blurred,
-     *     SVG-filtered surface never starves scrolling.
+     *     moving light never starves scrolling.
      *   - educlopez/smoothui (1046★): only the LIGHT moves, with a critically
      *     damped spring; the element itself never scales (scaling it squeezed
      *     the whole page — the user's exact complaint).
@@ -3176,11 +3162,11 @@ const DICTIONARIES = {
       let card = null;
       let rect = null;
       let boundaryAttached = false;
-      // A blurred backdrop-filter surface repaints on every CSS-variable write.
-      // Capping those writes to ~30 fps (instead of one per pointermove/rAF)
-      // is the single cheapest way to stop a low-end GPU from dropping frames
-      // while the user types. `intervalMs = 0` keeps the original 60 fps path.
+      // Only the light layer moves. Custom performance mode can still cap its
+      // updates, while Balanced and Fine follow the display's animation frames.
       let intervalMs = 0;
+      let pressEnabled = false;
+      let pressMotion = null;
       let lastFlush = 0;
       let timer = 0;
       const now = () => (typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -3188,11 +3174,8 @@ const DICTIONARIES = {
 
       const mq = (q) => (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
         ? window.matchMedia(q) : null);
-      const reduceMQ = mq('(prefers-reduced-motion: reduce)');
-      const coarseMQ = mq('(pointer: coarse)');
-      const fineMQ = mq('(hover: hover) and (pointer: fine)');
-      const isStatic = () => reduceMQ?.matches === true || coarseMQ?.matches === true
-        || fineMQ?.matches === false;
+      const reduceMQ = mq('(prefers-reduced-motion: reduce), (prefers-reduced-transparency: reduce), (forced-colors: active)');
+      const isStatic = () => reduceMQ?.matches === true;
 
       const doc = typeof document === 'undefined' ? null : document;
       const win = typeof window === 'undefined' ? null : window;
@@ -3206,8 +3189,7 @@ const DICTIONARIES = {
         if (card === null) return;
         const style = card.style;
         for (const [name, value] of Object.entries(vars)) {
-          // Twilight Echo: do not invalidate the filtered layer when the
-          // coalesced position rounds to the same value as the last frame.
+          // Skip writes when the coalesced coordinates are unchanged.
           if (style.getPropertyValue(name) !== value) style.setProperty(name, value);
         }
       };
@@ -3227,8 +3209,7 @@ const DICTIONARIES = {
       // A `pointerover` arriving without a preceding `pointerenter` still
       // arms the card; `pointerout` with a null relatedTarget (common when
       // leaving the window / Electron chrome) is treated as a real leave.
-      const isMouse = (event) => event.pointerType === undefined
-        || event.pointerType === 'mouse' || event.pointerType === '';
+      const canTrack = event => event.pointerType !== 'touch';
 
       const flush = () => {
         frame = 0;
@@ -3239,13 +3220,14 @@ const DICTIONARIES = {
         const event = pending;
         pending = null;
         if (event === null || card === null) return;
-        if (isStatic() || rect === null) { write(restingGlassVars()); return; }
+        if (isStatic() || !card.isConnected) { reset(); return; }
+        rect ??= card.getBoundingClientRect();
         lastFlush = now();
         write(pointerGlassVars(event, rect, { elasticShift: 6 }));
       };
 
       const onMove = (event) => {
-        if (!enabled || card === null || !isMouse(event)) return;
+        if (!enabled || card === null || !canTrack(event)) return;
         pending = { clientX: event.clientX, clientY: event.clientY };
         if (intervalMs <= 0) {
           if (frame === 0 && typeof requestAnimationFrame === 'function') {
@@ -3276,10 +3258,11 @@ const DICTIONARIES = {
       );
 
       const onOver = (event) => {
-        if (!enabled || !isMouse(event)) return;
+        if (!enabled || !canTrack(event) || isStatic()) return;
         const next = resolveCard(event.target);
         if (next === null) return;
         if (next !== card) {
+          reset();
           card = next;
           rect = next.getBoundingClientRect();      // measured ONCE on enter
         }
@@ -3288,7 +3271,7 @@ const DICTIONARIES = {
       };
 
       const onOut = (event) => {
-        if (!enabled || !isMouse(event)) return;
+        if (!enabled || !canTrack(event)) return;
         const from = resolveCard(event.target);
         const to = resolveCard(event.relatedTarget);
         if (from === to) return;                    // moving between children
@@ -3298,26 +3281,56 @@ const DICTIONARIES = {
         }
       };
 
+      const onPress = (event) => {
+        if (!pressEnabled || isStatic() || event.button !== 0 || event.isPrimary === false) return;
+        const target = event.target;
+        const pressed = resolveCard(target);
+        if (pressed === null || pressed.matches('[data-error], [aria-invalid="true"], [data-dragging], [class*="_cardWorkspaceTrigger"]')
+          || target.closest(':disabled, [aria-disabled="true"]') || typeof pressed.animate !== 'function') return;
+        pressMotion?.cancel();
+        const bounds = pressed.getBoundingClientRect();
+        const position = pointerGlassVars(event, bounds, { elasticShift: 0 });
+        const reach = Math.round(Math.max(155, Math.min(300, bounds.width * 0.38)));
+        // The animated properties are inherited by the inner light layer.
+        // Neither resizing nor applying a filter to the interactive card is needed.
+        const keyframe = (offset, size, alpha, scale) => ({
+          offset, '--glass-ripple-size': `${size}px`, '--glass-ripple-alpha': alpha,
+          '--glass-light-scale': scale, '--glass-press-x': position['--glass-x'],
+          '--glass-press-y': position['--glass-y'],
+        });
+        const animation = pressed.animate([
+          keyframe(0, 12, 0.54, 0.96),
+          keyframe(0.19, 48, 1, 0.985),
+          keyframe(0.42, Math.round(reach * 0.61), 0.74, 1),
+          keyframe(0.63, Math.round(reach * 0.83), 0.45, 0.996),
+          keyframe(1, reach, 0, 1),
+        ], { duration: 460, easing: 'cubic-bezier(0.18, 0.62, 0.32, 1)' });
+        pressMotion = animation;
+        animation.onfinish = () => { if (pressMotion === animation) pressMotion = null; };
+      };
+
       const invalidateRect = () => { rect = null; };
-      const onWindowBlur = () => { if (card !== null) reset(); };
+      const onWindowBlur = () => { if (card !== null) reset(); pressMotion?.cancel(); pressMotion = null; };
       const onVisibility = () => { if (doc?.visibilityState === 'hidden') onWindowBlur(); };
 
       function attachMove() {
         if (moveAttached || !canListen) return;
-        win.addEventListener('pointermove', onMove, { passive: true });
+        win.addEventListener('pointermove', onMove, { capture: true, passive: true });
         moveAttached = true;
       }
       function detachMove() {
         if (!moveAttached) return;
-        win.removeEventListener('pointermove', onMove);
+        win.removeEventListener('pointermove', onMove, true);
         moveAttached = false;
       }
 
       const attachBoundary = () => {
         if (!canListen || boundaryAttached) return;
-        doc.addEventListener('pointerover', onOver, { passive: true });
-        doc.addEventListener('pointerout', onOut, { passive: true });
+        doc.addEventListener('pointerover', onOver, { capture: true, passive: true });
+        doc.addEventListener('pointerout', onOut, { capture: true, passive: true });
+        doc.addEventListener('pointerdown', onPress, { capture: true, passive: true });
         win.addEventListener('blur', onWindowBlur);
+        reduceMQ?.addEventListener?.('change', onWindowBlur);
         doc.addEventListener('visibilitychange', onVisibility);
         win.addEventListener('resize', invalidateRect, { passive: true });
         doc.addEventListener('scroll', invalidateRect, { capture: true, passive: true });
@@ -3325,9 +3338,11 @@ const DICTIONARIES = {
       };
       const detachBoundary = () => {
         if (!canListen || !boundaryAttached) return;
-        doc.removeEventListener('pointerover', onOver);
-        doc.removeEventListener('pointerout', onOut);
+        doc.removeEventListener('pointerover', onOver, true);
+        doc.removeEventListener('pointerout', onOut, true);
+        doc.removeEventListener('pointerdown', onPress, true);
         win.removeEventListener('blur', onWindowBlur);
+        reduceMQ?.removeEventListener?.('change', onWindowBlur);
         doc.removeEventListener('visibilitychange', onVisibility);
         win.removeEventListener('resize', invalidateRect);
         doc.removeEventListener('scroll', invalidateRect, { capture: true });
@@ -3335,25 +3350,194 @@ const DICTIONARIES = {
       };
 
       return {
-        /** @param ms - 0 = unthrottled (fine/balanced); 32 ≈ 30 fps (balanced);
-         *  0 also means "static" when the controller skips enable() entirely. */
-        enable(ms = 0) {
+        /** @param ms - minimum interval between light updates, or zero for rAF only. */
+        enable(ms = 0, water = false) {
           intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
+          pressEnabled = water;
+          if (!water) pressMotion?.cancel();
           if (enabled || !canListen) return;
           enabled = true;
           attachBoundary();
         },
-        configure(ms = 0) {
-          intervalMs = Number.isFinite(ms) && ms > 0 ? ms : 0;
-        },
         disable() {
           if (!enabled) return;
           enabled = false;
+          pressMotion?.cancel();
+          pressMotion = null;
           reset();
           detachBoundary();
         },
       };
     }
+    // ---------------------------------------------------------------------
+    // Optional interface motion
+    // ---------------------------------------------------------------------
+
+    const MOTION_CSS = `
+@media (prefers-reduced-motion: no-preference) {
+  body[${MOTION_ATTR}] :is(.cctButton, [data-composer-card] button):not(:disabled, [aria-disabled="true"]) {
+    transition: translate 140ms ease-out, opacity 140ms ease-out,
+      background-color 140ms ease-out, border-color 140ms ease-out, color 140ms ease-out;
+  }
+  body[${MOTION_ATTR}] :is(.cctButton, [data-composer-card] button):active:not(:disabled, [aria-disabled="true"]) {
+    translate: 0 1px;
+    opacity: 0.82;
+    transition-duration: 75ms;
+  }
+  body[${MOTION_ATTR}] .cctStatus { animation: dsh-custom-theme-enter 160ms ease-out; }
+  @keyframes dsh-custom-theme-enter { from { opacity: 0; translate: 0 3px; } }
+}
+@media (prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) {
+  body[${MOTION_ATTR}] [data-composer-card] button:hover:not(:active, :disabled, [aria-disabled="true"]) {
+    translate: 0 -1px;
+  }
+}
+@media (prefers-reduced-motion: no-preference) and (forced-colors: none) {
+  ${FADE_STEPS.map((opacity, index) => `body[${MOTION_ATTR}] :is(${STREAM_SELECTOR}, ${STREAM_SELECTOR} *)::highlight(dsh-custom-theme-stream-${index}) {
+    color: color-mix(in srgb, currentColor ${opacity}%, transparent);
+  }`).join('\n')}
+}
+`;
+
+    /** Fade newly committed text in place, with no extra nodes or layout reads. */
+    function observeStreamReveal(doc, win) {
+      const registry = win.CSS?.highlights;
+      if (!registry || typeof win.Highlight !== 'function' || typeof win.StaticRange !== 'function'
+        || typeof win.MutationObserver !== 'function' || typeof win.matchMedia !== 'function') return () => {};
+
+      const preference = win.matchMedia('(prefers-reduced-motion: reduce), (forced-colors: active)');
+      const names = FADE_STEPS.map((_, index) => `dsh-custom-theme-stream-${index}`);
+      const streams = new Map();
+      const dirty = new Set();
+      const textLimit = 24_000;
+      const duration = names.length * FADE_STEP_MS;
+      let timer = null;
+
+      function paint() {
+        if (timer !== null) win.clearTimeout(timer);
+        timer = null;
+        const now = win.performance.now();
+        const buckets = names.map(() => []);
+        let nextPaint = Infinity;
+        for (const [root, stream] of streams) {
+          if (!root.isConnected || !root.matches(STREAM_SELECTOR)) {
+            streams.delete(root);
+            continue;
+          }
+          if (dirty.has(root)) {
+            const text = root.textContent;
+            const previous = stream.text;
+            if (text.length <= textLimit && previous !== null && text.startsWith(previous)) {
+              if (text.length > previous.length) stream.spans.push({
+                start: previous.length, end: text.length, time: now,
+              });
+            } else {
+              stream.spans = [];
+              // A streaming paragraph can precede an existing Markdown block.
+              // Highlight an insertion there while skipping true rewrites.
+              if (previous !== null && text.length <= textLimit && text.length > previous.length) {
+                let start = 0;
+                while (start < previous.length && text[start] === previous[start]) start++;
+                if (text.endsWith(previous.slice(start))) stream.spans.push({
+                  start, end: start + text.length - previous.length, time: now,
+                });
+              }
+            }
+            stream.text = text.length <= textLimit ? text : null;
+            stream.ranges = [];
+          }
+          stream.spans = stream.spans.filter(span => now - span.time < duration);
+          if (stream.spans.length === 0) {
+            stream.ranges = [];
+            continue;
+          }
+
+          if (dirty.has(root)) {
+            const walker = doc.createTreeWalker(root, win.NodeFilter.SHOW_TEXT);
+            let offset = 0;
+            let first = 0;
+            for (let node = walker.nextNode(); node && first < stream.spans.length; node = walker.nextNode()) {
+              const end = offset + node.length;
+              while (first < stream.spans.length && stream.spans[first].end <= offset) first++;
+              for (let index = first; index < stream.spans.length && stream.spans[index].start < end; index++) {
+                const span = stream.spans[index];
+                if (span.end <= offset || end === offset
+                  || node.parentElement?.closest('pre, code, button, [aria-hidden="true"]')) continue;
+                stream.ranges.push({ time: span.time, range: new win.StaticRange({
+                  startContainer: node, endContainer: node,
+                  startOffset: Math.max(0, span.start - offset), endOffset: Math.min(node.length, span.end - offset),
+                }) });
+              }
+              offset = end;
+            }
+          }
+          stream.ranges = stream.ranges.filter(({ time }) => now - time < duration);
+          for (const { time, range } of stream.ranges) {
+            const age = now - time;
+            buckets[Math.floor(age / FADE_STEP_MS)].push(range);
+            nextPaint = Math.min(nextPaint, FADE_STEP_MS - age % FADE_STEP_MS);
+          }
+        }
+        dirty.clear();
+        for (const [index, ranges] of buckets.entries()) {
+          if (ranges.length) registry.set(names[index], new win.Highlight(...ranges));
+          else registry.delete(names[index]);
+        }
+        if (nextPaint !== Infinity) timer = win.setTimeout(paint, nextPaint);
+      }
+
+      function track(root, animate) {
+        if (!streams.has(root)) {
+          const text = animate ? '' : root.textContent;
+          streams.set(root, { text: text.length <= textLimit ? text : null, spans: [], ranges: [] });
+        }
+        if (animate) dirty.add(root);
+      }
+
+      const observer = new win.MutationObserver(records => {
+        let changed = false;
+        for (const record of records) {
+          const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
+          const root = target?.closest(STREAM_SELECTOR);
+          if (root) track(root, true);
+          if (record.type === 'attributes' || (streams.size && record.removedNodes.length)) changed = true;
+          if (root || record.type !== 'childList') continue;
+          for (const node of record.addedNodes) {
+            if (node.nodeType !== 1) continue;
+            if (node.matches(STREAM_SELECTOR)) track(node, true);
+            for (const child of node.querySelectorAll(STREAM_SELECTOR)) track(child, true);
+          }
+        }
+        // Mutation observers run before the next paint. Register the new tone
+        // now so a fresh letter cannot flash at full contrast before fading in.
+        if (changed || dirty.size) paint();
+      });
+
+      function sync() {
+        observer.disconnect();
+        if (timer !== null) win.clearTimeout(timer);
+        timer = null;
+        streams.clear();
+        dirty.clear();
+        for (const name of names) registry.delete(name);
+        if (preference.matches || doc.hidden) return;
+        for (const root of doc.body.querySelectorAll(STREAM_SELECTOR)) track(root, false);
+        observer.observe(doc.body, { subtree: true, childList: true, characterData: true,
+          attributes: true, attributeFilter: ['data-streaming'] });
+      }
+
+      preference.addEventListener('change', sync);
+      doc.addEventListener('visibilitychange', sync);
+      sync();
+      return () => {
+        observer.disconnect();
+        if (timer !== null) win.clearTimeout(timer);
+        preference.removeEventListener('change', sync);
+        doc.removeEventListener('visibilitychange', sync);
+        for (const name of names) registry.delete(name);
+      };
+    }
+
     // ---------------------------------------------------------------------
     // Theme controller
     // ---------------------------------------------------------------------
@@ -3373,10 +3557,33 @@ const DICTIONARIES = {
       let state = loadSaved();
       let disposer = null;
       let lastCount = 0;
-      let dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
+      let dom = { style: null, layer: null, media: null, mediaKey: '' };
       let disposed = false;
       let captionFill = null;
       let captionDrag = null;
+      let stopMotion = null;
+
+      const applyMotion = () => {
+        if (!state.motion) {
+          stopMotion?.();
+          stopMotion = null;
+          return;
+        }
+        if (stopMotion !== null || !document.body) return;
+        const body = document.body;
+        const style = document.createElement('style');
+        style.dataset.plugin = PLUGIN_ID;
+        style.dataset.pluginCss = `${PLUGIN_ID}/motion`;
+        style.textContent = MOTION_CSS;
+        document.head.appendChild(style);
+        body.setAttribute(MOTION_ATTR, '');
+        const stopReveal = observeStreamReveal(document, window);
+        stopMotion = () => {
+          stopReveal();
+          body.removeAttribute(MOTION_ATTR);
+          style.remove();
+        };
+      };
 
       const emit = () => {
         if (disposed) return;
@@ -3403,7 +3610,6 @@ const DICTIONARIES = {
           try { dom.media.load(); } catch { /* noop */ }
         }
         if (dom.style !== null) dom.style.remove();
-        if (dom.svg !== null) dom.svg.remove();
         // B1: the wallpaper layer itself used to be left in the document on
         // every teardown, so repeated enable/disable accumulated duplicate
         // #dsh-custom-theme-backdrop nodes (and their media elements).
@@ -3413,7 +3619,7 @@ const DICTIONARIES = {
           body.removeAttribute(BACKDROP_ATTR);
           body.removeAttribute(GLASS_ATTR);
         }
-        dom = { style: null, layer: null, svg: null, svgKey: '', media: null, mediaKey: '' };
+        dom = { style: null, layer: null, media: null, mediaKey: '' };
       };
 
       /**
@@ -3447,14 +3653,16 @@ const DICTIONARIES = {
           dom.mediaKey = '';
         }
 
-        // Stylesheet can be replaced cheaply on every update.
-        if (dom.style !== null) dom.style.remove();
-        const style = document.createElement('style');
-        style.dataset.plugin = PLUGIN_ID;
-        style.dataset.pluginCss = `${PLUGIN_ID}/backdrop`;
-        style.textContent = css;
-        document.head.appendChild(style);
-        dom.style = style;
+        if (dom.style === null) {
+          const style = document.createElement('style');
+          style.dataset.plugin = PLUGIN_ID;
+          style.dataset.pluginCss = `${PLUGIN_ID}/backdrop`;
+          style.textContent = css;
+          document.head.appendChild(style);
+          dom.style = style;
+        } else if (dom.style.textContent !== css) {
+          dom.style.textContent = css;
+        }
 
         const needsCaptionDrag = bd.enabled === true && bd.source !== ''
           && document.documentElement.hasAttribute('data-windows-titlebar');
@@ -3466,24 +3674,6 @@ const DICTIONARIES = {
         } else if (!needsCaptionDrag && captionDrag !== null) {
           captionDrag.remove();
           captionDrag = null;
-        }
-
-        // Only rebuild the SVG holder when its definition actually changed;
-        // removing a filter that is currently referenced makes the composer
-        // flash for one frame (and re-registers @property rules).
-        const svg = buildRefractionSvg(bd);
-        const svgKey = svg;
-        if (dom.svg !== null && dom.svgKey !== svgKey) {
-          dom.svg.remove();
-          dom.svg = null;
-        }
-        dom.svgKey = svgKey;
-        if (dom.svg === null && svg !== '') {
-          const holder = document.createElement('div');
-          holder.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden';
-          holder.innerHTML = svg;
-          body.appendChild(holder);
-          dom.svg = holder;
         }
 
         if (dom.layer === null && mediaInfo !== null) {
@@ -3536,7 +3726,7 @@ const DICTIONARIES = {
        * colours and the wallpaper translucency share one override layer so a
        * single teardown removes everything.
        */
-      const reapply = () => {
+      const reapply = (prepared) => {
         clear();
         const theme = resolveTheme();
         if (theme === undefined) return { count: 0, warnings: [] };
@@ -3544,7 +3734,7 @@ const DICTIONARIES = {
         const tokens = {};
         let warnings = [];
         if (state.enabled && state.css.trim() !== '') {
-          const built = buildOverrides(parseThemeInput(state.css), state.options);
+          const built = prepared ?? buildOverrides(parseThemeInput(state.css), state.options);
           Object.assign(tokens, built.tokens);
           warnings = built.warnings;
         }
@@ -3573,9 +3763,9 @@ const DICTIONARIES = {
        * then skipped, which keeps the settings page from stalling a live
        * stream on every keystroke.
        */
-      const refresh = (tokensDirty = true) => {
+      const refresh = (tokensDirty = true, prepared) => {
         let warnings = [];
-        if (tokensDirty) warnings = reapply().warnings;
+        if (tokensDirty) warnings = reapply(prepared).warnings;
         applyDom();
         const bd = state.backdrop;
         if (bd.glass !== true) {
@@ -3583,14 +3773,11 @@ const DICTIONARIES = {
           pointerGlass.disable();
         } else if (isLiteGlass(bd)) {
           // "流畅 / lite": the biggest win for low-end PCs. A static specular
-          // light needs zero pointer listeners and zero CSS-variable writes
+          // surface needs zero pointer listeners and zero CSS-variable writes
           // while the user types — only one shallow blur() remains.
           pointerGlass.disable();
         } else {
-          // "均衡 / balanced" repaints at most ~30 fps; "精细 / fine" and
-          // custom keep the original per-rAF path.
-          pointerGlass.configure(bd.glassPreset === 'fine' ? 0 : 32);
-          pointerGlass.enable(bd.glassPreset === 'fine' ? 0 : 32);
+          pointerGlass.enable(bd.performance ? 32 : 0, !bd.performance && bd.refract > 0);
         }
         return { count: lastCount, warnings };
       };
@@ -3625,10 +3812,11 @@ const DICTIONARIES = {
               && document.body !== null && typeof document.body.getAttribute === 'function'
               && document.body.getAttribute(GLASS_ATTR) === 'on',
             tokenCount: lastCount,
-            backdropFilterSupported: typeof CSS !== 'undefined'
-              && typeof CSS.supports === 'function'
-              ? CSS.supports('backdrop-filter', 'blur(1px)')
-                || CSS.supports('-webkit-backdrop-filter', 'blur(1px)')
+            motion: state.motion,
+            streamingFadeSupported: typeof window.Highlight === 'function' && !!window.CSS?.highlights,
+            backdropFilterSupported: typeof window.CSS?.supports === 'function'
+              ? window.CSS.supports('backdrop-filter', 'blur(1px)')
+                || window.CSS.supports('-webkit-backdrop-filter', 'blur(1px)')
               : null,
           };
         },
@@ -3645,24 +3833,36 @@ const DICTIONARIES = {
           // of resetting every other slider back to its default.
           let backdrop = prev.backdrop;
           if (patch.backdrop !== undefined) {
-            backdrop = normalizeBackdrop({ ...prev.backdrop, ...patch.backdrop }).backdrop;
+            const normalized = normalizeBackdrop({ ...prev.backdrop, ...patch.backdrop });
+            if (patch.backdrop.source !== undefined && normalized.sourceError !== null) {
+              return { count: lastCount, warnings: [], saveError: null, sourceError: normalized.sourceError };
+            }
+            backdrop = normalized.backdrop;
           }
-          state = { ...prev, ...patch, backdrop };
-          if (patch.options !== undefined) state.options = normalizeOptions(patch.options);
-          // Token writes are only needed when the theme CSS or its mapping
-          // options changed. Backdrop-only changes just replace the stylesheet.
+          const next = { ...prev, ...patch, backdrop };
+          if (patch.options !== undefined) next.options = normalizeOptions(patch.options);
+          let prepared;
+          if (patch.css !== undefined && next.enabled) {
+            prepared = buildOverrides(parseThemeInput(next.css), next.options);
+            if (Object.keys(prepared.tokens).length === 0) {
+              return { count: 0, warnings: prepared.warnings, saveError: null, rejected: true };
+            }
+          }
+          state = next;
+          const hasWallpaper = bd => bd.enabled && bd.source !== '';
+          // Shell transparency depends on the presence of active wallpaper.
+          // Sliders and valid-to-valid source changes need no token writes.
           const tokensDirty = patch.css !== undefined || patch.enabled !== undefined
-            || patch.options !== undefined || patch.reset === true;
-          const result = refresh(tokensDirty);
+            || patch.options !== undefined || hasWallpaper(prev.backdrop) !== hasWallpaper(backdrop);
+          if (prev.motion !== next.motion) applyMotion();
+          const result = refresh(tokensDirty, prepared);
           const saveError = persist();
           emit();
           return {
             count: result.count,
             warnings: result.warnings,
             saveError,
-            // Surface a rejected URL to the UI instead of silently clearing it.
-            sourceError: patch.backdrop !== undefined && patch.backdrop.source !== undefined
-              ? (normalizeBackdrop(patch.backdrop).sourceError ?? null) : null,
+            sourceError: null,
           };
         },
         /** Remove the theme colours (the wallpaper is an independent setting). */
@@ -3677,6 +3877,7 @@ const DICTIONARIES = {
         /** Stack the saved layer as soon as the plugin runs. */
         restore() {
           if (disposed) return 0;
+          applyMotion();
           const result = refresh(true);
           emit();
           return result.count;
@@ -3686,6 +3887,7 @@ const DICTIONARIES = {
           if (disposed) return;
           disposed = true;
           clear();
+          stopMotion?.();
           pointerGlass.disable();
           teardownDom();
           listeners.clear();
@@ -3715,6 +3917,8 @@ const DICTIONARIES = {
         const [draft, setDraft] = useState(() => controller.get().css);
         const [status, setStatus] = useState(null);
         const [showDetail, setShowDetail] = useState(false);
+        const [backdropStatus, setBackdropStatus] = useState(null);
+        const [urlDraft, setUrlDraft] = useState(null);
 
         // Re-render when the controller changes state anywhere else.
         useEffect(() => controller.subscribe(() => bump(value => value + 1)), [controller]);
@@ -3736,7 +3940,7 @@ const DICTIONARIES = {
             return;
           }
           const result = controller.update({ css: draft, name: '', enabled: true });
-          if (result.count === 0) {
+          if (result.rejected || result.count === 0) {
             setStatus({ kind: 'err', text: t('status.nothing') });
             return;
           }
@@ -3787,33 +3991,29 @@ const DICTIONARIES = {
           'performance',
         ]);
 
-        const setBackdrop = useCallback((key, value) => {
-          // Hand-editing a glass number (slider or dropdown) means the numbers
-          // no longer match a named look. Wallpaper sliders are independent.
-          const patch = { [key]: value };
-          if (GLASS_KEYS.has(key)) patch.glassPreset = 'custom';
+        const updateBackdrop = useCallback((patch) => {
           const result = controller.update({ backdrop: patch });
           if (result.saveError !== null) {
-            setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
+            setBackdropStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
           } else if (result.sourceError !== null && result.sourceError !== undefined) {
-            setStatus({ kind: 'err', text: t('bg.errUrl').replace('{reason}', result.sourceError) });
+            setBackdropStatus({ kind: 'err', text: t('bg.errUrl').replace('{reason}', result.sourceError) });
+          } else {
+            setBackdropStatus(null);
+            return true;
           }
+          return false;
         }, [controller, t]);
+
+        const setBackdrop = (key, value) => updateBackdrop(GLASS_KEYS.has(key)
+          ? { [key]: value, glassPreset: 'custom' } : { [key]: value });
 
         /** Apply a whole named glass look in one controller update. */
         const setGlassPreset = useCallback((id) => {
           const values = GLASS_PRESETS[id];
-          const result = controller.update({
-            backdrop: values === undefined
-              ? { glassPreset: 'custom' }
-              : { ...values, glassPreset: id },
-          });
-          if (result.saveError !== null) {
-            setStatus({ kind: 'err', text: `${t('status.saveFailed')}: ${result.saveError}` });
-          } else if (values !== undefined) {
-            setStatus({ kind: 'ok', text: t('bg.presetApplied') });
+          if (updateBackdrop({ ...values, glassPreset: id }) && values !== undefined) {
+            setBackdropStatus({ kind: 'ok', text: t('bg.presetApplied') });
           }
-        }, [controller, t]);
+        }, [updateBackdrop, t]);
 
         const bd = state.backdrop;
 
@@ -3868,23 +4068,16 @@ const DICTIONARIES = {
           const file = event.target.files?.[0];
           if (file === undefined) return;
           if (!/^image\/(png|jpe?g|webp|gif|avif|bmp)$/i.test(file.type)) {
-            setStatus({ kind: 'err', text: t('bg.errImageOnly') });
+            setBackdropStatus({ kind: 'err', text: t('bg.errImageOnly') });
             return;
           }
           const reader = new FileReader();
-          reader.onerror = () => setStatus({ kind: 'err', text: t('bg.errRead') });
+          reader.onerror = () => setBackdropStatus({ kind: 'err', text: t('bg.errRead') });
           reader.onload = () => {
             if (typeof reader.result !== 'string') return;
             const img = new Image();
             img.onerror = () => {
-              // Some formats (AVIF) may not decode in every Electron build;
-              // fall back to the raw data URL and let the validator decide.
-              if (reader.result.length <= MAX_DATA_URL_BYTES) {
-                setBackdrop('source', reader.result);
-                setStatus({ kind: 'ok', text: t('bg.pickOk') });
-              } else {
-                setStatus({ kind: 'err', text: t('bg.errTooLarge') });
-              }
+              setBackdropStatus({ kind: 'err', text: t('bg.errRead') });
             };
             img.onload = () => {
               try {
@@ -3899,19 +4092,21 @@ const DICTIONARIES = {
                 let out = canvas.toDataURL('image/jpeg', 0.82);
                 if (out.length > MAX_DATA_URL_BYTES) out = canvas.toDataURL('image/jpeg', 0.6);
                 if (out.length > MAX_DATA_URL_BYTES) {
-                  setStatus({ kind: 'err', text: t('bg.errTooLarge') });
+                  setBackdropStatus({ kind: 'err', text: t('bg.errTooLarge') });
                   return;
                 }
-                setBackdrop('source', out);
-                setStatus({ kind: 'ok', text: t('bg.pickOk') });
+                if (updateBackdrop({ kind: 'image', source: out })) {
+                  setUrlDraft(null);
+                  setBackdropStatus({ kind: 'ok', text: t('bg.pickOk') });
+                }
               } catch (error) {
-                setStatus({ kind: 'err', text: `${t('bg.errRead')}: ${String(error)}` });
+                setBackdropStatus({ kind: 'err', text: `${t('bg.errRead')}: ${String(error)}` });
               }
             };
             img.src = reader.result;
           };
           reader.readAsDataURL(file);
-        }, [setBackdrop, t]);
+        }, [updateBackdrop, t]);
 
         const detail = useMemo(() => {
           if (appliedParsed === null) return null;
@@ -3965,6 +4160,21 @@ const DICTIONARIES = {
             h('div', { className: 'cctHint', key: 'rule' }, t('intro.rule')),
           ]),
 
+          h('div', { className: 'cctCard', key: 'motion' }, [
+            h('label', { key: 'toggle', className: 'cctCheck' }, [
+              h('input', {
+                key: 'input', type: 'checkbox', checked: state.motion,
+                onChange: event => {
+                  const { saveError } = controller.update({ motion: event.target.checked });
+                  setStatus(saveError === null ? null
+                    : { kind: 'err', text: `${t('status.saveFailed')}: ${saveError}` });
+                },
+              }),
+              t('motion.enable'),
+            ]),
+            h('div', { key: 'hint', className: 'cctHint' }, t('motion.hint')),
+          ]),
+
           // ---- Wallpaper + liquid glass ------------------------------------
           h('div', { className: 'cctCard', key: 'backdrop' }, [
             h('div', { className: 'cctTitle', key: 'title' }, t('bg.title')),
@@ -3992,9 +4202,15 @@ const DICTIONARIES = {
 
             h('input', {
               key: 'url', className: 'cctInputSmall', type: 'text',
-              value: bd.source, placeholder: t('bg.urlPlaceholder'),
+              value: urlDraft ?? (bd.source.startsWith('data:') ? '' : bd.source),
+              placeholder: t(bd.source.startsWith('data:') ? 'bg.localImage' : 'bg.urlPlaceholder'),
+              'aria-label': t('bg.urlPlaceholder'),
               spellCheck: false,
-              onChange: event => setBackdrop('source', event.target.value),
+              onChange: event => setUrlDraft(event.target.value),
+              onBlur: () => {
+                if (urlDraft !== null && setBackdrop('source', urlDraft)) setUrlDraft(null);
+              },
+              onKeyDown: event => { if (event.key === 'Enter') event.currentTarget.blur(); },
             }),
             h('div', { className: 'cctRow', key: 'filerow' }, [
               h('label', { key: 'f', className: 'cctButton', htmlFor: 'cct-bg-file' }, t('bg.pickFile')),
@@ -4008,9 +4224,13 @@ const DICTIONARIES = {
               }),
               h('button', {
                 key: 'clear', type: 'button', className: 'cctButton',
-                onClick: () => setBackdrop('source', ''),
+                onClick: () => { setUrlDraft(null); setBackdrop('source', ''); },
               }, t('bg.clear')),
             ]),
+            backdropStatus === null ? null : h('div', {
+              key: 'bgStatus', role: 'status',
+              className: `cctStatus ${backdropStatus.kind === 'ok' ? 'cctStatusOk' : 'cctStatusErr'}`,
+            }, backdropStatus.text),
             h('div', { className: 'cctHint', key: 'sec' }, t('bg.security')),
 
             slider('blur', t('bg.blur'), 0, 40, 1, 'px'),

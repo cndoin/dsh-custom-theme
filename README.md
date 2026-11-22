@@ -22,22 +22,16 @@ Apple-style liquid-glass composer with a pointer-following specular highlight.
 | **Paste-safety** | Only CSS custom-property *declarations* are read. Pasted content is never inserted as a stylesheet. `url()`, `@import`, `expression()`, `javascript:`, braces and semicolons are rejected. |
 | **Custom wallpaper** | Image or video, `blur` / `dim` / `tint` sliders, optional local file (downscaled to 1920 px and re-encoded as JPEG before storage). |
 | **Liquid glass** | Frosted composer with a white specular highlight that follows the pointer. The element itself never scales or transforms. |
+| **Interaction effects** | Optional fade-in for new reply text, button feedback and glass that stays visible while typing. |
 | **Offline, no telemetry** | Everything runs in the renderer. No network requests, no analytics, no account. |
 
-### A deliberate non-feature
+### Streaming and interaction effects
 
-The plugin **does not** try to change how fast the model's text appears. DSH assembles
-`assistant/live-chunk` deltas into a string and hands the whole block to `MarkdownText`;
-the only pacing in the client is a triple `requestAnimationFrame` flush. A client plugin
-has no per-chunk event, and a `MutationObserver` only sees text *after* React commits it.
-Rewriting the conversation renderer would drop the official Markdown, tool cards and
-citation interactions, and break copy/paste.
-
-What the plugin *does* guarantee is that it does not make it worse: with everything off
-it injects **zero CSS, zero SVG filters and zero token overrides**. Glass and wallpaper
-are strictly opt-in, so a fresh install adds no per-frame compositing work to a live
-stream. An earlier revision enabled an SVG displacement filter by default; that was the
-most likely cause of janky output in small text areas and has been removed.
+Enable **Streaming and interaction effects** in the plugin settings. Newly committed
+reply text fades in over about 145 ms. DSH keeps control of delivery timing and Markdown.
+The effect paints text ranges in place, preserving selection and copy, and pauses when
+the page is hidden or the system requests reduced motion. It requires browser support
+for CSS Custom Highlights. Wallpaper, glass and interaction effects start off.
 
 ---
 
@@ -119,8 +113,8 @@ not require Apply. Both are **off by default** — enable them only if you want 
 Every numeric parameter now has **both** a discrete-stop dropdown and its original slider
 (the two stay in sync); dragging the slider flips the dropdown to "Custom". The glass card
 also offers three one-click quality presets: **Smooth** (recommended on low-end machines:
-one shallow `blur()`, no refraction, no pointer-tracking repaints), **Balanced** (the shipped
-defaults, repaints capped at ~30 fps), and **Fine** (full effect). Pick "Smooth" if it stutters.
+one shallow `blur()` and a static surface), **Balanced** (pointer-following light and press
+ripples), and **Fine** (more pronounced light and depth).
 
 **Fonts are off by default.** tweakcn's `--font-sans` is usually Latin-only (e.g.
 `Geist, sans-serif`); enabling takeover wrote it INLINE on `<body>` through
@@ -183,22 +177,21 @@ fallbacks would otherwise clobber DSH's currently active built-in theme.
 
 ### Glass without breaking the composer
 
-The glass rule targets the stable `[data-composer-card]` attribute only. It contains:
-
-- no `transform` / `scale` (an earlier revision squeezed the page — the element's geometry
-  is now untouched),
-- no SVG `filter: url(...)` on the composer (a filter creates a new containing block and
-  would misplace `@`-mention / attachment / emoji popovers, and clip overflow),
-- no `isolation`, no child selectors, no pseudo-elements,
-- no `!important` on `background-color` / `border-radius` / `border` (DSH's focus-visible
-  and error states stay intact); specificity comes from
-  `:not(:focus-within):not([data-error])` instead.
+The `[data-composer-card]` keeps its geometry and native focus styling. A stationary
+pseudo-element paints the frosted backing and rim. A separate inset pseudo-element paints
+the moving highlight and expands a press ripple from the pointer. The workspace picker
+keeps its native dashed outline. The two decorative layers ignore pointer events.
 
 Pointer tracking is deliberately quiet: a resident low-frequency `pointerover` /
 `pointerout` pair, with `pointermove` attached only while the pointer is over the card;
 one `requestAnimationFrame` with latest-wins coalescing; values are compared before being
 written; all listeners are `passive`; nothing calls `preventDefault` / `stopPropagation`.
-`(hover: hover) and (pointer: fine)`, `prefers-reduced-motion` and `pointer: coarse` gate it.
+Mouse and pen events drive hover lighting. A primary press adds the brief ripple, including
+on touch screens. The system reduced-motion preference disables both effects.
+
+Interaction references are [Apple's Liquid Glass documentation](https://developer.apple.com/documentation/SwiftUI/Applying-Liquid-Glass-to-custom-views),
+[SmoothUI Glass Card](https://smoothui.dev/docs/components/glass-card), and
+[simple-liquid-glass](https://github.com/lucaperullo/simple-liquid-glass).
 
 ### Degradation
 

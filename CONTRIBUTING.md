@@ -18,9 +18,9 @@ no bundler, no build step at install time**. Please keep it that way.
 4. **Do not widen wallpaper translucency** beyond `--dsw-alias-bg-base` and
    `--dsw-specific-sidebar-fill`. Layer-1/2, overlay, input-major and static ramps are
    used by code blocks, trajectory tables and popovers.
-5. **Do not add `transform` / `scale`, SVG `filter: url()`, `isolation`, child selectors,
-   pseudo-elements or `!important` to the composer glass rules.** Each of those has a
-   documented regression in the README.
+5. **Keep filters and geometry changes off the composer itself.** Place blur and light
+   effects on pointer-transparent decorative layers. Preserve the host's focus border,
+   native workspace outline, and fixed popover positioning.
 6. **Default-off for anything that costs per-frame work.** If a feature introduces a
    `backdrop-filter`, a large SVG filter, a `MutationObserver` or an interval, it must be
    opt-in and justified.
@@ -28,7 +28,7 @@ no bundler, no build step at install time**. Please keep it that way.
 ## Before opening a PR
 
 ```bash
-npm run check     # build + node --check + 97 unit tests + 6 compatibility scripts
+npm run check     # build + node --check + 108 unit tests + 6 compatibility scripts
 ```
 
 If you add a theme format, add a case to `scripts/format-matrix.mjs` **and** a regression

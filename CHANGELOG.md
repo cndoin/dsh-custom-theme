@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## Unreleased
+
+- Added opt-in reply text fade-in and composer button motion that follow the system reduced-motion preference.
+- Kept the frosted effect while typing. Added a soft reflection that follows the upper edge and a brief press ripple on a separate layer.
+- Made wallpaper toggles update the shell transparency immediately, preserved the saved theme when an import fails, and remembered explicit font choices across restarts.
+
 ## [1.1.0] - 2026-11-19
 
 Track DSH **0.2.2-rc.5** (the current stable build and the `nightly` feed; rc.5 is the

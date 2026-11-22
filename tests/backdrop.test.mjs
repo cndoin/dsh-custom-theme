@@ -15,7 +15,7 @@ import {
   DEFAULT_BACKDROP, MAX_DATA_URL_BYTES, BACKDROP_ATTR, GLASS_ATTR,
   SLIDER_STEPS, GLASS_PRESETS, isLiteGlass, matchGlassPreset,
   checkBackgroundUrl, normalizeBackdrop, buildBackdropCss, buildGlassCss,
-  buildRefractionSvg, buildBackgroundTokens, describeMedia, shouldPauseVideo,
+  buildBackgroundTokens, describeMedia, shouldPauseVideo,
   pointerGlassVars, restingGlassVars, buildWindowDragCss,
 } from '../src/backdrop.js';
 
@@ -89,12 +89,11 @@ test('normalizeBackdrop clamps every numeric field and keeps defaults', () => {
 // CSS generation
 // ---------------------------------------------------------------------------
 
-test('a fully disabled backdrop produces no CSS, tokens, media or SVG', () => {
+test('a fully disabled backdrop produces no CSS, tokens or media', () => {
   const bd = sample({ enabled: false, glass: false });
   assert.equal(buildBackdropCss(bd), '');
   assert.deepEqual(buildBackgroundTokens(bd), {});
   assert.equal(describeMedia(bd), null);
-  assert.equal(buildRefractionSvg(bd), '');
 });
 
 test('liquid glass works WITHOUT the wallpaper switch (regression)', () => {
@@ -105,9 +104,7 @@ test('liquid glass works WITHOUT the wallpaper switch (regression)', () => {
   assert.ok(css.length > 0, 'glass rules are emitted');
   assert.match(css, /data-composer-card/);
   assert.match(css, /backdrop-filter/);
-  // The SVG displacement path is OFF by default now (refract:0). Turning on
-  // only the glass toggle must NOT pull in the expensive/composer-breaking SVG.
-  assert.equal(buildRefractionSvg(bd), '');
+  assert.doesNotMatch(css, /filter: url\(/);
   assert.equal(describeMedia(bd), null);
   assert.deepEqual(buildBackgroundTokens(bd), {});
   const noGlass = buildBackdropCss(sample({ enabled: false, source: '', glass: false }));
@@ -160,7 +157,7 @@ test('the glass CSS uses a stable composer attribute and all tunable values', ()
   assert.match(css, /border-radius: 14px/);
   assert.match(css, /rgba\(255,255,255,0\.18\)/, 'restrained white edge highlight');
   assert.match(css, /inset 0 1px 0/, 'top inner highlight');
-  assert.match(css, /linear-gradient\(90deg/, 'specular top line');
+  assert.match(css, /linear-gradient\(180deg/, 'soft overhead lighting');
   assert.match(css, /@supports not/, 'unsupported-browser fallback');
   assert.match(css, /@supports \(\(backdrop-filter/, 'standard path');
   assert.match(css, /prefers-reduced-transparency/, 'a11y downgrade');
@@ -175,83 +172,72 @@ test('buildBackdropCss includes the glass rules only when glass is on', () => {
   assert.ok(!off.includes('@supports'));
 });
 
-test('performance mode caps blur, disables refraction and shimmer', () => {
+test('performance mode caps blur and disables the water pattern', () => {
   const bd = sample({ glass: true, glassBlur: 30, blur: 40, refract: 16, performance: true });
-  assert.equal(buildRefractionSvg(bd), '');
   const css = buildBackdropCss(bd);
   assert.match(css, /filter: blur\(8px\)/, 'background blur capped');
   assert.match(css, /blur\(8px\) saturate/, 'glass blur capped');
-  assert.ok(!css.includes('url(#dsh-glass-refract)'));
+  assert.doesNotMatch(css, /@property --glass-ripple-size/);
 });
 
-test('the refraction SVG uses an sRGB displacement filter with a bounded scale (explicit opt-in)', () => {
-  // The feature is not deleted: a user who EXPLICITLY enables glass AND raises
-  // refract above 0 still gets the SVG definition. It is simply never applied
-  // to the composer element itself (bug #2).
-  const svg = buildRefractionSvg(sample({ glass: true, refract: 8, refractFrequency: 15 }));
-  assert.match(svg, /color-interpolation-filters="sRGB"/);
-  assert.match(svg, /feDisplacementMap/);
-  assert.match(svg, /feTurbulence/);
-  assert.match(svg, /baseFrequency="0\.015 0\.015"/);
-  assert.match(svg, /scale="8"/);
-  assert.match(svg, /xChannelSelector="R"/);
-  assert.match(svg, /yChannelSelector="G"/);
-  assert.equal(buildRefractionSvg(sample({ glass: true, refract: 0 })), '');
-  // No explicit glass → off, even with a nonzero refract value.
-  assert.equal(buildRefractionSvg(sample({ refract: 12 })), '');
+test('the old Balanced preset gains water lighting while a custom zero stays zero', () => {
+  const old = { glass: true, ...GLASS_PRESETS.balanced, refract: 0 };
+  assert.equal(normalizeBackdrop({ ...old, glassPreset: 'balanced' }).backdrop.refract, 6);
+  assert.equal(normalizeBackdrop({ ...old, glassPreset: 'custom' }).backdrop.refract, 0);
 });
 
 // ---------------------------------------------------------------------------
 // Confirmed-bug regressions (review of the "uneven typing" / popover report)
 // ---------------------------------------------------------------------------
 
-test('glass and refraction are OFF by default (bug #1)', () => {
+test('glass is off by default', () => {
   assert.equal(DEFAULT_BACKDROP.glass, false);
-  assert.equal(DEFAULT_BACKDROP.refract, 0);
   // A fresh profile must emit NO stylesheet at all, so no backdrop-filter is
   // ever attached to the composer while DSH streams tokens.
   const css = buildBackdropCss(DEFAULT_BACKDROP);
   assert.equal(css, '', 'default config produces no CSS');
   assert.ok(!css.includes('backdrop-filter'));
   assert.ok(!css.includes('filter: url('));
-  assert.equal(buildRefractionSvg(DEFAULT_BACKDROP), '',
-    'default config builds no displacement SVG');
   // normalizeBackdrop must not reintroduce the old defaults.
   assert.equal(normalizeBackdrop(null).backdrop.glass, false);
-  assert.equal(normalizeBackdrop(null).backdrop.refract, 0);
   // The boolean-default logic is preserved: an explicit true still wins.
   assert.equal(normalizeBackdrop({ glass: true }).backdrop.glass, true);
 });
 
-test('buildGlassCss never emits the composer-breaking filter, isolation or !important (bugs #2/#3)', () => {
+test('buildGlassCss filters only the decorative layer and preserves the native focus border', () => {
   const css = buildGlassCss(sample({ glass: true, refract: 12 }));
-  assert.ok(!css.includes('filter: url('), 'no SVG filter on the composer');
-  assert.ok(!css.includes('isolation: isolate'), 'no isolation stacking context');
+  const withoutDecoration = css.replace(/::before\s*\{[^}]*\}/g, '');
+  assert.doesNotMatch(withoutDecoration, /^\s+(?:-webkit-)?(?:backdrop-filter: blur|filter: url\()/m,
+    'filters stay off the composer so fixed popovers keep their positioning context');
+  assert.match(css, /::before\s*\{[^}]*z-index: -1/, 'the decoration sits behind the input controls');
   assert.ok(!css.includes('!important'),
     'no !important so DSH :focus-visible / [data-error] / drag states win');
   // The decorative properties still exist, just without !important.
   assert.match(css, /background-color: color-mix/);
   assert.match(css, /border-radius:/);
-  assert.match(css, /border: 1px solid/);
+  assert.match(css, /border-color: rgba/);
   // The frosted (backdrop-filter) look itself is retained.
   assert.match(css, /backdrop-filter: blur\(/);
-  // A state-safe selector is used so focus/error states are excluded.
+  // Focus retains the glass surface while the host controls the border.
+  assert.match(css, /:focus-within \{ --glass-glow:/);
   assert.match(css, /:not\(:focus-within\)/);
 });
 
-test('an explicit glass + refract>0 opt-in still works end-to-end (feature not deleted)', () => {
+test('water lighting affects just the inner light, with a stable edge and native workspace outline', () => {
   const bd = sample({ glass: true, refract: 10 });
   // The frosted composer CSS is still produced when the user opts in.
   const css = buildBackdropCss(bd);
   assert.match(css, /\[data-composer-card\]/);
   assert.match(css, /backdrop-filter: blur\(/);
-  assert.ok(!css.includes('filter: url('), 'even when opted in, the SVG is NOT on the composer');
-  // The SVG definition is still emitted for the opt-in case (export preserved).
-  const svg = buildRefractionSvg(bd);
-  assert.match(svg, /feDisplacementMap/);
-  assert.match(svg, /scale="10"/);
-  // performance mode continues to disable it.
-  assert.equal(buildRefractionSvg(sample({ glass: true, refract: 10, performance: true })), '');
+  assert.match(css, /_cardWorkspaceTrigger[^\n]*::after\s*\{[^}]*inset: 2px/);
+  assert.match(css, /::after\s*\{[^}]*radial-gradient\(ellipse 240px 26px at var\(--glass-x\) -4px/);
+  assert.match(css, /::after\s*\{[^}]*radial-gradient\(circle at var\(--glass-press-x, 50%\)/);
+  assert.match(css, /@property --glass-ripple-size \{ syntax: '<length>'; inherits: true/);
+  assert.doesNotMatch(css, /filter: url\(/);
+  assert.doesNotMatch(buildGlassCss({ ...bd, refract: 0 }), /radial-gradient\(circle/);
+  assert.match(buildGlassCss({ ...bd, refractFrequency: 30 }), /var\(--glass-ripple-size\) \+ 13px/);
+  assert.match(css, /at var\(--glass-x\) var\(--glass-y\),\s*rgb\(255 255 255 \/ [\d.]+\) 0%, transparent 100%\)/,
+    'the pointer glow fades monotonically outwards without a hover ring');
 });
 
 // ---------------------------------------------------------------------------
@@ -356,7 +342,6 @@ test('the wallpaper layer declares its own macOS window region', () => {
 test('pointer variables follow the cursor but NEVER scale the element', () => {
   const rect = { left: 100, top: 100, width: 400, height: 100 };
   const centre = pointerGlassVars({ clientX: 300, clientY: 150 }, rect);
-  assert.equal(centre['--glass-ang'], '135deg');
   assert.equal(centre['--glass-glow'], undefined, 'intensity is owned by CSS :hover, not JS');
   assert.match(centre['--glass-x'], /calc\(50% \+ 0px\)/);
   assert.match(centre['--glass-y'], /calc\(50% \+ 0px\)/);
@@ -366,7 +351,6 @@ test('pointer variables follow the cursor but NEVER scale the element', () => {
   assert.equal(centre['--glass-sy'], undefined);
 
   const right = pointerGlassVars({ clientX: 500, clientY: 150 }, rect);
-  assert.ok(Number(right['--glass-ang'].replace('deg', '')) > 135, 'band rotates with cursor');
   // Elastic nudge is clamped to 6px.
   const shift = Number(right['--glass-x'].match(/\+ (-?[\d.]+)px/)[1]);
   assert.ok(Math.abs(shift) <= 6, `elastic shift ${shift} must stay <= 6px`);
@@ -380,7 +364,7 @@ test('pointer variables follow the cursor but NEVER scale the element', () => {
 test('resting values reset every pointer variable', () => {
   const rest = restingGlassVars();
   assert.deepEqual(Object.keys(rest).sort(), [
-    '--glass-ang', '--glass-x', '--glass-y',
+    '--glass-x', '--glass-y',
   ]);
   for (const value of Object.values(rest)) assert.equal(typeof value, 'string');
 });
@@ -393,10 +377,10 @@ test('the glass CSS is pointer-reactive AND isolated from code/child elements', 
   assert.match(css, /transition: --glass-glow/);
   assert.ok(!css.includes('--glass-x 0.18s'), 'position variables are not transitioned');
   assert.match(css, /var\(--glass-x\) var\(--glass-y\)/, 'pointer hotspot');
-  assert.match(css, /var\(--glass-ang\)/, 'rotating specular band');
+  assert.match(css, /at var\(--glass-x\) -4px/, 'specular light follows the upper rim');
   assert.match(css, /:hover \{ --glass-glow: 1/, 'hover brightening');
   assert.match(css, /prefers-reduced-motion/, 'reduced-motion downgrade');
-  assert.match(css, /pointer: coarse/, 'touch downgrade');
+  assert.match(css, /any-pointer: coarse/, 'touch downgrade');
   // NO transform / scale anywhere — the element must never change geometry.
   assert.ok(!/transform:/.test(css), 'no transform');
   assert.ok(!/scale[XY]?\(/.test(css), 'no scale');
@@ -404,9 +388,7 @@ test('the glass CSS is pointer-reactive AND isolated from code/child elements', 
   assert.ok(!css.includes('rgba(0,180,255'), 'no blue corner glow');
   assert.ok(!css.includes('rgba(255,100,200'), 'no pink corner glow');
   assert.ok(!css.includes('rgba(130,90,255'), 'no violet corner glow');
-  // Isolation: no pseudo-elements, no child selectors.
-  assert.ok(!css.includes('::before'), 'no pseudo-elements');
-  assert.ok(!css.includes('::after'), 'no pseudo-elements');
+  assert.match(css, /::before\s*\{[^}]*pointer-events: none/, 'the decoration cannot intercept input');
   assert.ok(!css.includes('> *'), 'no rules on child nodes');
 });
 
@@ -665,11 +647,8 @@ test('enabling a wallpaper creates the DOM layer, stylesheet and token overrides
   assert.equal(img.getAttribute('src'), 'https://example.com/wall.jpg');
   assert.equal(img.getAttribute('alt'), '');
 
-  // The refraction filter was injected once.
-  const svgHolder = appendedHead.length >= 0
-    ? created.find((el) => typeof el.innerHTML === 'string' && el.innerHTML.includes('feDisplacementMap'))
-    : undefined;
-  assert.ok(svgHolder !== undefined, 'the displacement SVG was created');
+  assert.match(backdropStyle.textContent, /::after\s*\{[^}]*radial-gradient/);
+  assert.ok(!created.some(el => el.innerHTML?.includes('feDisplacementMap')));
 
   // Changing only a slider must not recreate the media element.
   const before = created.filter((el) => el.tagName === 'IMG').length;
@@ -706,16 +685,13 @@ test('glass presets are valid, distinct and lite is the cheapest recipe', () => 
     assert.equal(bd.glassPreset, id, `${id} round-trips through normalizeBackdrop`);
     assert.equal(matchGlassPreset(bd), id, `${id} is recognised by matchGlassPreset`);
     assert.equal(isLiteGlass(bd), id === 'lite', `lite flag for ${id}`);
-    // The SVG is a decoration-only definition; it must NEVER be referenced by
-    // the composer CSS (that would re-anchor its position:fixed popovers).
-    assert.ok(!buildGlassCss(bd).includes('filter: url('),
-      `${id} never filters the composer element`);
-    if (id === 'lite') assert.equal(buildRefractionSvg(bd), '',
-      'lite avoids even the unused SVG definition');
+    const css = buildGlassCss(bd);
+    assert.equal(css.includes('@property --glass-ripple-size'), id !== 'lite', 'Balanced and Fine support click ripples');
+    assert.doesNotMatch(css, /filter: url\(/);
   }
   assert.ok(GLASS_PRESETS.lite.glassBlur < GLASS_PRESETS.fine.glassBlur,
     'lite uses a shallower blur than fine');
-  assert.equal(GLASS_PRESETS.lite.refract, 0, 'lite never pays for an SVG refraction filter');
+  assert.equal(GLASS_PRESETS.lite.refract, 0, 'lite disables water lighting');
 });
 
 test('the default profile is balanced, and a lite profile emits no transition', () => {
@@ -734,7 +710,7 @@ test('the default profile is balanced, and a lite profile emits no transition', 
     'lite uses a single shallow blur, no saturate/brightness/contrast chain');
   assert.ok(!/saturate\(/.test(liteCss), 'lite drops the extra filter passes');
   assert.match(liteCss, /transition: none/, 'lite removes the per-hover transition');
-  assert.equal(buildRefractionSvg(lite), '', 'lite emits no refraction SVG');
+  assert.doesNotMatch(liteCss, /::after/, 'lite omits the moving layer');
 });
 
 test('hand-editing a glass number moves the dropdown label to custom', () => {

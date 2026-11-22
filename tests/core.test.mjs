@@ -1323,8 +1323,12 @@ test('the settings page applies a themed paste end to end', async () => {
   const cssText = await fixture('amethyst-haze.oklch.css');
   const hooks = makeHooks();
 
+  const element = () => ({
+    dataset: {}, appendChild() {}, setAttribute() {}, removeAttribute() {}, remove() {},
+  });
   const document = {
-    createElement: () => ({ dataset: {}, remove() {} }),
+    body: element(), documentElement: { hasAttribute: () => false },
+    createElement: element,
     head: { appendChild() {} },
   };
   const localStorage = {
@@ -1440,6 +1444,33 @@ test('the settings page applies a themed paste end to end', async () => {
   const resetButton = findAll(third.result, node => node.type === 'button'
     && String(node.props.className).includes('cctButtonDanger'))[0];
   assert.equal(resetButton.props.disabled, false, 'reset is available once applied');
+
+  const checkbox = (view, label) => findAll(view, node => node.type === 'label'
+    && node.children.includes(label))[0].children.find(node => node?.type === 'input');
+  const wallpaperToggle = checkbox(third.result, 'bg.enable');
+  const wallpaperInput = findAll(third.result, node => node.props?.placeholder === 'bg.urlPlaceholder')[0];
+  const wallpaperUrl = 'https://example.com/background.jpg';
+  wallpaperInput.props.onChange({ target: { value: wallpaperUrl } });
+  const fourth = hooks.render(Section).result;
+  findAll(fourth, node => node.props?.placeholder === 'bg.urlPlaceholder')[0].props.onBlur();
+  wallpaperToggle.props.onChange({ target: { checked: true } });
+  assert.match(layers.at(-1).tokens['--dsw-alias-bg-base'].light, /color-mix/);
+  wallpaperToggle.props.onChange({ target: { checked: false } });
+  assert.equal(layers.at(-1).tokens['--dsw-alias-bg-base'].light, amethyst.light.background);
+
+  const afterWallpaper = hooks.render(Section).result;
+  checkbox(afterWallpaper, 'mapping.fonts').props.onChange({ target: { checked: true } });
+  const withFonts = JSON.parse(store.get('dsh-custom-theme/v1'));
+  assert.equal(withFonts.options.fonts, true);
+  assert.equal(withFonts.fontsMigrationV2, true, 'save marks the font value as a deliberate choice');
+
+  const invalidDraft = hooks.render(Section).result;
+  findAll(invalidDraft, node => node.type === 'textarea')[0].props.onChange({ target: { value: 'plain text' } });
+  const beforeInvalid = layers.length;
+  findAll(hooks.render(Section).result, node => node.type === 'button'
+    && String(node.props.className).includes('cctButtonPrimary'))[0].props.onClick();
+  assert.equal(layers.length, beforeInvalid, 'reject the invalid theme before touching the live layer');
+  assert.equal(JSON.parse(store.get('dsh-custom-theme/v1')).css, cssText, 'keep the previous theme on disk');
 
   // Reset removes the layer and forgets the theme.
   resetButton.props.onClick();
