@@ -3,7 +3,7 @@
 All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## Unreleased
+## [1.2.0] - 2026-11-23
 
 - Added opt-in reply text fade-in and composer button motion that follow the system reduced-motion preference.
 - Kept the frosted effect while typing. Added a soft reflection that follows the upper edge and a brief press ripple on a separate layer.
@@ -177,3 +177,4 @@ First public release.
 
 [1.0.0]: https://github.com/cndoin/dsh-custom-theme/releases/tag/v1.0.0
 [1.1.0]: https://github.com/cndoin/dsh-custom-theme/releases/tag/v1.1.0
+[1.2.0]: https://github.com/cndoin/dsh-custom-theme/releases/tag/v1.2.0
